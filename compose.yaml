@@ -1,0 +1,21 @@
+services:
+  maintenance-agent:
+    build:
+      context: .
+    image: zifisense-maintenance-agent-demo:1.0.0
+    restart: unless-stopped
+    ports:
+      - "${AGENT_PORT:-8080}:8080"
+    environment:
+      APP_MODE: competition
+      APP_VERSION: 1.0.0
+      DATABASE_URL: sqlite:////app/data/agent.db
+      EVALUATOR_API_KEY_HASH: "${EVALUATOR_API_KEY_HASH:?set EVALUATOR_API_KEY_HASH}"
+      LIMITED_API_KEY_HASH: "${LIMITED_API_KEY_HASH:?set LIMITED_API_KEY_HASH}"
+      MCP_ALLOWED_HOSTS: '${MCP_ALLOWED_HOSTS:-["127.0.0.1:*","localhost:*", "testserver"]}'
+      MCP_ALLOWED_ORIGINS: '${MCP_ALLOWED_ORIGINS:-[]}'
+    volumes:
+      - agent-data:/app/data
+
+volumes:
+  agent-data:

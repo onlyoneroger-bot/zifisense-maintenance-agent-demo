@@ -112,4 +112,14 @@ docker build -t zifisense-agent-api:1.0.0 .
 docker run --rm -p 8080:8080 zifisense-agent-api:1.0.0
 ```
 
+持久化部署可使用单服务 Compose。先设置两个 API Key 的 SHA-256 Hash，再启动：
+
+```bash
+export EVALUATOR_API_KEY_HASH='<sha256-of-evaluator-key>'
+export LIMITED_API_KEY_HASH='<sha256-of-limited-scope-key>'
+docker compose up --build --detach
+```
+
+Compose 仅开放一个端口，SQLite 数据保存在 `agent-data` 命名卷中。公网部署还应通过反向代理提供 HTTPS，并把真实域名加入 `MCP_ALLOWED_HOSTS`。
+
 生产域名部署时，把 `MCP_ALLOWED_HOSTS` 设为 JSON 数组，例如 `["agent.example.com"]`；浏览器来源同时加入 `MCP_ALLOWED_ORIGINS`。GitHub Actions 会验证 Ruff、pytest、镜像构建、非 root 用户、8080 健康检查和容器内 MCP 探测。
