@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ZiFiSense Intelligent Maintenance Agent API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
     Competition evaluation API for the ZiFiSense intelligent maintenance Agent.
     The API exposes an isolated evaluation session, natural-language Agent invocation,
@@ -414,7 +414,7 @@ components:
               example: zifisense-intelligent-maintenance-agent
             version:
               type: string
-              example: 0.2.0
+              example: 0.3.0
             locale:
               type: string
               example: zh-CN
@@ -465,6 +465,14 @@ components:
         code:
           type: string
           enum:
+            - asset_catalog_query
+            - current_fault_query
+            - fault_detail_query
+            - fault_history_query
+            - monitoring_summary
+            - operating_context_query
+            - maintenance_history_query
+            - peer_comparison
             - knowledge_retrieval
             - context_orchestration
             - evidence_conflict_detection

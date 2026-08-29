@@ -37,13 +37,37 @@
 
 查询已关闭、解决或驳回的历史记录。支持设备、厂区、产线、设备类型、故障模式、诊断状态、关闭时间和 `related_to_fault_id`。相关历史同时返回相似维度与差异维度，并保留 `VALIDATED`、`REJECTED`、`INCONCLUSIVE` 结局。
 
+### `get_monitoring_summary`
+
+按当前 `fault_id` 查询近期监测趋势、已提取特征、数据质量和证据时间。返回的是模拟分析摘要，不接受原始高频时序数据，也不由 LLM 直接诊断波形。
+
+### `get_operating_context`
+
+按当前 `fault_id` 查询最近已知负荷、转速、节拍、配方、启停次数和缺失字段。数据新鲜度会明确标识，可用于驱动 Agent 追问报警时工况。
+
+### `get_maintenance_history`
+
+按当前 `fault_id` 返回相关资产的模拟维修记录、来源和证据标识，供本次调查关联使用；历史维修不自动证明本次故障原因。
+
+### `compare_peer_assets`
+
+按当前 `fault_id` 对比同产线可比设备的状态、监测指标和可比性，返回调查分析，不直接修改专业诊断置信度。
+
+### `request_field_measurement`
+
+在 `consent=true` 的明确同意条件下，为指定评测任务创建唯一的模拟现场补测请求。重复调用返回原请求，不重复调度；没有这个调用，补测结果不会被接收。
+
+### `ingest_field_measurement_result`
+
+回传专业便携分析服务生成的结构化声学和振动摘要。`PASS` 结果进入人工工程判断，`PARTIAL/FAIL` 保持待补证；不接收或伪造原始高频波形。
+
 ### `agent_invoke`
 
-调用与 REST `POST /api/v1/agent/invoke` 相同的 Agent 服务。当前为基于已持久化报警的诚实降级路径：不伪造 LLM、RAG、工具执行、引用或审批能力。
+调用与 REST `POST /api/v1/agent/invoke` 相同的受控 Agent 服务。它按意图调用上述 Fixture 工具，保留事实、推断、证据和待补问题，并持久化多轮调查；当前不调用 LLM，也不伪造 RAG 引用或审批能力。
 
 ### `get_task`
 
-按 `evaluation_session_id + task_id` 读取持久化任务和初始报警。跨会话或不存在的任务返回 Tool Error。
+按 `evaluation_session_id + task_id` 读取持久化任务、初始报警、对话轮次和人工声明。跨会话或不存在的任务返回 Tool Error。
 
 ## 安全和数据声明
 
@@ -51,4 +75,4 @@
 - `diagnosis_status` 表示诊断成熟度；候选诊断不等于最终故障事实。
 - 工具目录不存在 PLC/DCS 控制或直接停机能力。
 - 查询工具不依赖 LLM；LLM 不可用时仍可稳定调用。
-- 当前写操作仅限创建隔离评测会话，不写入真实工业系统。
+- 当前写操作仅限创建隔离评测会话、保存对话与未验证人工声明，以及明确同意后的模拟补测请求和结构化结果；不写入真实工业系统。

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -11,6 +12,7 @@ from pydantic import Field
 from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
 from zifisense_agent_api.application.agent_facade import AgentFacade
 from zifisense_agent_api.application.evaluation_service import EvaluationService
+from zifisense_agent_api.application.event_service import EventService
 from zifisense_agent_api.infrastructure.repositories import EvaluationRepository
 from zifisense_agent_api.mcp_models import (
     AssetListResult,
@@ -19,8 +21,13 @@ from zifisense_agent_api.mcp_models import (
     FaultHistoryResult,
     FaultListResult,
     FaultStatus,
+    FieldMeasurementRequestResult,
+    MaintenanceHistoryResult,
     MCPAgentInvokeResult,
     MonitoringStatus,
+    MonitoringSummaryResult,
+    OperatingContextResult,
+    PeerComparisonResult,
     Severity,
     TaskResult,
 )
@@ -28,6 +35,8 @@ from zifisense_agent_api.transport.schemas import (
     AgentInvokeRequest,
     CreateEvaluationSessionRequest,
     CreateEvaluationSessionResponse,
+    FieldMeasurementCompletedEventRequest,
+    FieldMeasurementCompletedPayload,
 )
 
 DetailModule = Literal[
@@ -58,6 +67,7 @@ def build_mcp_server(
     evaluation_service: EvaluationService,
     agent_facade: AgentFacade,
     repository: EvaluationRepository,
+    event_service: EventService,
 ) -> MCPServer:
     server = MCPServer(
         name="zifisense-intelligent-maintenance-agent",
@@ -192,6 +202,108 @@ def build_mcp_server(
             raise ToolError(str(exc)) from exc
 
     @server.tool()
+    def get_monitoring_summary(fault_id: str) -> MonitoringSummaryResult:
+        """Get structured recent monitoring trends and data-quality status for a fault."""
+        try:
+            return catalog.get_monitoring_summary(fault_id)
+        except KeyError as exc:
+            raise ToolError(f"Investigation data does not exist: {fault_id}") from exc
+
+    @server.tool()
+    def get_operating_context(fault_id: str) -> OperatingContextResult:
+        """Get load, speed, production and freshness context without inferring missing values."""
+        try:
+            return catalog.get_operating_context(fault_id)
+        except KeyError as exc:
+            raise ToolError(f"Investigation data does not exist: {fault_id}") from exc
+
+    @server.tool()
+    def get_maintenance_history(fault_id: str) -> MaintenanceHistoryResult:
+        """Get structured maintenance records and their evidence quality for a current fault."""
+        try:
+            return catalog.get_maintenance_history(fault_id)
+        except KeyError as exc:
+            raise ToolError(f"Investigation data does not exist: {fault_id}") from exc
+
+    @server.tool()
+    def compare_peer_assets(fault_id: str) -> PeerComparisonResult:
+        """Compare a faulted asset with selected peers and disclose comparability limits."""
+        try:
+            return catalog.compare_peer_assets(fault_id)
+        except KeyError as exc:
+            raise ToolError(f"Investigation data does not exist: {fault_id}") from exc
+
+    @server.tool()
+    def request_field_measurement(
+        evaluation_session_id: str,
+        task_id: str,
+        consent: Literal[True],
+    ) -> FieldMeasurementRequestResult:
+        """Create one simulated field-measurement request after explicit user consent."""
+        evaluation, task, alarm = repository.get_task_snapshot(evaluation_session_id, task_id)
+        if evaluation is None or task is None or alarm is None:
+            raise ToolError("Task or evaluation session does not exist.")
+        if evaluation.client_id != "evaluator" or task.evaluation_session_id != evaluation.id:
+            raise ToolError("Task access is forbidden.")
+        record, created = repository.get_or_create_field_measurement_request(
+            evaluation_session_id=evaluation.id,
+            task_id=task.id,
+            asset_id=task.asset_id,
+            measurement_point_id=alarm.measurement_point_id,
+        )
+        return FieldMeasurementRequestResult(
+            request_id=record.id,
+            evaluation_session_id=evaluation.id,
+            task_id=task.id,
+            asset_id=record.asset_id,
+            measurement_point_id=record.measurement_point_id,
+            status=record.status,
+            created=created,
+            is_simulated=True,
+        )
+
+    @server.tool()
+    def ingest_field_measurement_result(
+        event_id: str,
+        evaluation_session_id: str,
+        task_id: str,
+        asset_id: str,
+        measurement_point_id: str,
+        collection_quality: Literal["PASS", "FAIL", "PARTIAL"],
+        sound_analysis: dict[str, Any],
+        vibration_analysis: dict[str, Any],
+        operating_condition: str | None = None,
+        source_system: str = "PORTABLE_ANALYSIS_SIMULATOR",
+    ) -> dict[str, Any]:
+        """Ingest a simulated structured portable-analysis result; raw waveforms are excluded."""
+        request_id, trace_id = _request_ids()
+        try:
+            result = event_service.ingest_field_measurement(
+                request=FieldMeasurementCompletedEventRequest(
+                    event_id=event_id,
+                    event_type="FIELD_MEASUREMENT_COMPLETED",
+                    source_system=source_system,
+                    occurred_at=datetime.now().astimezone(),
+                    evaluation_session_id=evaluation_session_id,
+                    task_id=task_id,
+                    payload=FieldMeasurementCompletedPayload(
+                        asset_id=asset_id,
+                        measurement_point_id=measurement_point_id,
+                        collection_quality=collection_quality,
+                        operating_condition=operating_condition,
+                        sound_analysis=sound_analysis,
+                        vibration_analysis=vibration_analysis,
+                    ),
+                ),
+                client_id="evaluator",
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
+        return result.model_dump(mode="json")
+
+    @server.tool()
     def agent_invoke(
         evaluation_session_id: str,
         conversation_id: str,
@@ -226,6 +338,10 @@ def build_mcp_server(
             raise ToolError("Task or evaluation session does not exist.")
         if evaluation.client_id != "evaluator" or task.evaluation_session_id != evaluation.id:
             raise ToolError("Task access is forbidden.")
+        turns = repository.list_conversation_turns(task_id)
+        claims = repository.list_human_claims(task_id)
+        field_request = repository.get_field_measurement_request(task_id)
+        field_measurements = repository.list_field_measurement_events(task_id)
         return TaskResult(
             task_id=task.id,
             evaluation_session_id=evaluation.id,
@@ -239,6 +355,50 @@ def build_mcp_server(
                 "source_system": alarm.source_system,
                 "observed_at": alarm.observed_at,
             },
+            conversation_turns=[
+                {
+                    "turn_id": turn.id,
+                    "message": turn.message,
+                    "intent": turn.intent,
+                    "answer": turn.answer,
+                    "tool_names": json.loads(turn.tool_names_json),
+                    "created_at": turn.created_at,
+                }
+                for turn in turns
+            ],
+            human_claims=[
+                {
+                    "evidence_id": claim.evidence_id,
+                    "text": claim.claim_text,
+                    "source_role": claim.source_role,
+                    "quality_status": claim.quality_status,
+                    "observed_at": claim.observed_at,
+                }
+                for claim in claims
+            ],
+            field_measurement_request=(
+                {
+                    "request_id": field_request.id,
+                    "asset_id": field_request.asset_id,
+                    "measurement_point_id": field_request.measurement_point_id,
+                    "status": field_request.status,
+                    "created_at": field_request.created_at,
+                }
+                if field_request is not None
+                else None
+            ),
+            field_measurements=[
+                {
+                    "event_id": item.event_id,
+                    "evidence_id": item.evidence_id,
+                    "collection_quality": item.collection_quality,
+                    "source_system": item.source_system,
+                    "occurred_at": item.occurred_at,
+                    "payload": json.loads(item.payload_json),
+                }
+                for item in field_measurements
+            ],
+            evidence_version=task.evidence_version,
             is_simulated=alarm.is_simulated,
         )
 

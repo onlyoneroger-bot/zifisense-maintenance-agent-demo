@@ -139,8 +139,80 @@ class TaskResult(MCPModel):
     task_state: str
     asset_id: str
     alarm: dict[str, Any]
+    conversation_turns: list[dict[str, Any]]
+    human_claims: list[dict[str, Any]]
+    field_measurement_request: dict[str, Any] | None
+    field_measurements: list[dict[str, Any]]
+    evidence_version: int
     is_simulated: bool
 
 
 class MCPAgentInvokeResult(MCPModel):
     response: dict[str, Any]
+
+
+class MonitoringSummaryResult(MCPModel):
+    fault_id: str
+    asset_id: str
+    window: str
+    measurement_point_id: str
+    overall_status: str
+    trend: str
+    features: list[dict[str, Any]]
+    data_quality: str
+    observed_at: datetime
+    source_system: str
+    evidence_id: str
+    is_simulated: Literal[True]
+
+
+class OperatingContextResult(MCPModel):
+    fault_id: str
+    asset_id: str
+    status: str
+    load_percent: float | None = None
+    speed_rpm: float | None = None
+    production_rate: float | None = None
+    recipe: str | None = None
+    starts_last_24h: int | None = None
+    observed_at: datetime
+    freshness: str
+    missing_fields: list[str]
+    source_system: str
+    evidence_id: str
+    is_simulated: Literal[True]
+
+
+class MaintenanceHistoryResult(MCPModel):
+    fault_id: str
+    asset_id: str
+    records: list[dict[str, Any]]
+    source_system: str
+    evidence_id: str
+    is_simulated: Literal[True]
+
+
+class PeerComparisonResult(MCPModel):
+    fault_id: str
+    subject_asset_id: str
+    peer_group_id: str
+    comparability: str
+    subject_status: str
+    peers: list[dict[str, Any]]
+    analysis: str
+    limitations: list[str]
+    observed_at: datetime
+    source_system: str
+    evidence_id: str
+    is_simulated: Literal[True]
+
+
+class FieldMeasurementRequestResult(MCPModel):
+    request_id: str
+    evaluation_session_id: str
+    task_id: str
+    asset_id: str
+    measurement_point_id: str
+    status: str
+    created: bool
+    is_simulated: Literal[True]

@@ -40,6 +40,7 @@ class TaskRecord(Base):
     )
     state: Mapped[str] = mapped_column(String(64))
     asset_id: Mapped[str] = mapped_column(String(128))
+    evidence_version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[str] = mapped_column(String(64))
 
 
@@ -75,6 +76,73 @@ class IdempotencyRecord(Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     status_code: Mapped[int]
     response_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(64))
+
+
+class ConversationTurnRecord(Base):
+    __tablename__ = "conversation_turns"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    intent: Mapped[str] = mapped_column(String(64))
+    answer: Mapped[str] = mapped_column(Text)
+    tool_names_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(64))
+
+
+class HumanClaimRecord(Base):
+    __tablename__ = "human_claims"
+    __table_args__ = (UniqueConstraint("task_id", "claim_text", name="uq_task_claim"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    evidence_id: Mapped[str] = mapped_column(String(64), unique=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    claim_text: Mapped[str] = mapped_column(Text)
+    source_role: Mapped[str] = mapped_column(String(64))
+    quality_status: Mapped[str] = mapped_column(String(32))
+    observed_at: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[str] = mapped_column(String(64))
+
+
+class FieldMeasurementRequestRecord(Base):
+    __tablename__ = "field_measurement_requests"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_field_request_task"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    asset_id: Mapped[str] = mapped_column(String(128))
+    measurement_point_id: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[str] = mapped_column(String(64))
+
+
+class FieldMeasurementEventRecord(Base):
+    __tablename__ = "field_measurement_events"
+
+    event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    source_system: Mapped[str] = mapped_column(String(128))
+    occurred_at: Mapped[str] = mapped_column(String(64))
+    asset_id: Mapped[str] = mapped_column(String(128))
+    measurement_point_id: Mapped[str] = mapped_column(String(128))
+    collection_quality: Mapped[str] = mapped_column(String(32))
+    payload_json: Mapped[str] = mapped_column(Text)
+    evidence_id: Mapped[str] = mapped_column(String(64), unique=True)
+    is_simulated: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[str] = mapped_column(String(64))
 
 

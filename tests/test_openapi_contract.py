@@ -63,12 +63,42 @@ def test_success_responses_match_authoritative_schemas(client):
             "message": "当前设备发生了什么？",
         },
     )
+    client.post(
+        "/api/v1/agent/invoke",
+        headers=AUTH_HEADERS,
+        json={
+            "evaluation_session_id": data["evaluation_session_id"],
+            "conversation_id": data["conversation_id"],
+            "task_id": data["task_id"],
+            "message": "同意补测。",
+        },
+    )
+    event = client.post(
+        "/api/v1/events",
+        headers=AUTH_HEADERS,
+        json={
+            "event_id": "evt-contract-field",
+            "event_type": "FIELD_MEASUREMENT_COMPLETED",
+            "source_system": "PORTABLE_ANALYSIS_SIMULATOR",
+            "occurred_at": "2026-08-29T10:30:00+08:00",
+            "evaluation_session_id": data["evaluation_session_id"],
+            "task_id": data["task_id"],
+            "payload": {
+                "asset_id": "ASSET-REDUCER-001",
+                "measurement_point_id": "MP-4F040B86-X",
+                "collection_quality": "PASS",
+                "sound_analysis": {"status": "ABNORMAL"},
+                "vibration_analysis": {"status": "ABNORMAL"},
+            },
+        },
+    )
 
     expected = (
         (health, 200, "HealthResponse"),
         (capabilities, 200, "CapabilitiesResponse"),
         (session, 201, "CreateEvaluationSessionResponse"),
         (agent, 200, "AgentInvokeResponse"),
+        (event, 200, "EventIngestResponse"),
     )
     for response, status_code, schema_name in expected:
         assert response.status_code == status_code

@@ -13,6 +13,7 @@ from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
 from zifisense_agent_api.adapters.fixtures import FixtureCatalog
 from zifisense_agent_api.application.agent_facade import AgentFacade
 from zifisense_agent_api.application.evaluation_service import EvaluationService
+from zifisense_agent_api.application.event_service import EventService
 from zifisense_agent_api.config import Settings
 from zifisense_agent_api.domain.errors import ApplicationError
 from zifisense_agent_api.infrastructure.auth import ApiKeyAuthenticator
@@ -27,7 +28,7 @@ from zifisense_agent_api.transport.errors import (
     validation_error_handler,
 )
 from zifisense_agent_api.transport.mcp_auth import MCPBearerAuthMiddleware
-from zifisense_agent_api.transport.routers import agent, evaluation, system
+from zifisense_agent_api.transport.routers import agent, evaluation, events, system
 
 
 def create_app(
@@ -44,13 +45,15 @@ def create_app(
     authenticator = ApiKeyAuthenticator(app_settings)
     rate_limiter = SlidingWindowRateLimiter(clock=clock)
     evaluation_service = EvaluationService(repository, fixtures)
-    agent_facade = AgentFacade(repository)
+    event_service = EventService(repository)
+    agent_facade = AgentFacade(repository, catalog)
     mcp_server = build_mcp_server(
         app_version=app_settings.app_version,
         catalog=catalog,
         evaluation_service=evaluation_service,
         agent_facade=agent_facade,
         repository=repository,
+        event_service=event_service,
     )
     mcp_http_app = mcp_server.streamable_http_app(
         streamable_http_path="/mcp",
@@ -86,6 +89,7 @@ def create_app(
     app.state.authenticator = authenticator
     app.state.rate_limiter = rate_limiter
     app.state.evaluation_service = evaluation_service
+    app.state.event_service = event_service
     app.state.agent_facade = agent_facade
     app.state.repository = repository
     app.state.catalog = catalog
@@ -119,6 +123,7 @@ def create_app(
     app.include_router(system.router)
     app.include_router(evaluation.router)
     app.include_router(agent.router)
+    app.include_router(events.router)
     app.mount("/", authenticated_mcp_app, name="mcp")
     return app
 

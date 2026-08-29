@@ -19,6 +19,12 @@ EXPECTED_TOOLS = {
     "list_fault_history",
     "agent_invoke",
     "get_task",
+    "get_monitoring_summary",
+    "get_operating_context",
+    "get_maintenance_history",
+    "compare_peer_assets",
+    "request_field_measurement",
+    "ingest_field_measurement_result",
 }
 
 
@@ -252,6 +258,31 @@ def test_every_current_fault_has_diagnosis_and_analysis(app):
             assert detail["open_questions"]
 
 
+def test_investigation_tools_return_structured_source_backed_results(app):
+    expectations = {
+        "get_monitoring_summary": ("overall_status", "ANOMALOUS"),
+        "get_operating_context": ("source_system", "MES_SIMULATOR"),
+        "get_maintenance_history": ("source_system", "EAM_SIMULATOR"),
+        "compare_peer_assets": ("comparability", "PARTIAL"),
+    }
+    with TestClient(app) as client:
+        for index, (tool_name, (field, expected)) in enumerate(
+            expectations.items(), start=1
+        ):
+            response, body = call_modern_tool(
+                client,
+                tool_name,
+                {"fault_id": "FLT-20260820-001"},
+                request_id=index,
+            )
+            result = body["result"]["structuredContent"]
+            assert response.status_code == 200
+            assert result[field] == expected
+            assert result["fault_id"] == "FLT-20260820-001"
+            assert result["evidence_id"]
+            assert result["is_simulated"] is True
+
+
 def test_mcp_and_rest_share_session_task_and_agent(app):
     with TestClient(app) as client:
         _, created_body = call_modern_tool(
@@ -298,10 +329,23 @@ def test_mcp_and_rest_share_session_task_and_agent(app):
             },
             request_id=3,
         )
+        _, replay_body = call_modern_tool(
+            client,
+            "get_task",
+            {
+                "evaluation_session_id": created["evaluation_session_id"],
+                "task_id": created["task_id"],
+            },
+            request_id=4,
+        )
     assert rest.status_code == 200
     mcp_agent = invoked_body["result"]["structuredContent"]["response"]
     assert mcp_agent["data"]["system_diagnosis"] == rest.json()["data"]["system_diagnosis"]
-    assert mcp_agent["data"]["task_state"] == rest.json()["data"]["task_state"]
+    assert rest.json()["data"]["task_state"] == "CONTEXT_COLLECTING"
+    assert mcp_agent["data"]["task_state"] == "EVIDENCE_REVIEW"
+    replay = replay_body["result"]["structuredContent"]
+    assert len(replay["conversation_turns"]) == 2
+    assert replay["conversation_turns"][0]["tool_names"]
 
 
 def test_ten_concurrent_modern_tool_calls(app):

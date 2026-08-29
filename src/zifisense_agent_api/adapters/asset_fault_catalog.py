@@ -14,6 +14,10 @@ from zifisense_agent_api.mcp_models import (
     FaultHistoryResult,
     FaultListResult,
     FaultSummary,
+    MaintenanceHistoryResult,
+    MonitoringSummaryResult,
+    OperatingContextResult,
+    PeerComparisonResult,
 )
 
 SEVERITY_ORDER = {"CRITICAL": 4, "MAJOR": 3, "WARNING": 2, "INFO": 1}
@@ -38,6 +42,7 @@ class AssetFaultCatalog:
         self._assets = self._load(catalog_dir / "assets.json")
         self._faults = self._load(catalog_dir / "current_faults.json")
         self._history = self._load(catalog_dir / "fault_history.json")
+        self._investigations = self._load_mapping(catalog_dir / "investigation_data.json")
         self._asset_by_id = {item["asset_id"]: item for item in self._assets}
         self._fault_by_id = {item["fault_id"]: item for item in self._faults}
 
@@ -47,6 +52,14 @@ class AssetFaultCatalog:
             data = json.load(stream)
         if not isinstance(data, list):
             raise ValueError(f"Fixture catalog must contain a JSON array: {path}")
+        return data
+
+    @staticmethod
+    def _load_mapping(path: Path) -> dict[str, dict[str, Any]]:
+        with path.open(encoding="utf-8") as stream:
+            data = json.load(stream)
+        if not isinstance(data, dict):
+            raise ValueError(f"Fixture catalog must contain a JSON object: {path}")
         return data
 
     @staticmethod
@@ -71,6 +84,31 @@ class AssetFaultCatalog:
 
     def _active_faults_for(self, asset_id: str) -> list[dict[str, Any]]:
         return [fault for fault in self._faults if fault["asset_id"] == asset_id]
+
+    def current_fault_for_asset(self, asset_id: str) -> dict[str, Any] | None:
+        return next((fault for fault in self._faults if fault["asset_id"] == asset_id), None)
+
+    def get_monitoring_summary(self, fault_id: str) -> MonitoringSummaryResult:
+        data = self._investigation_section(fault_id, "monitoring")
+        return MonitoringSummaryResult(fault_id=fault_id, **data)
+
+    def get_operating_context(self, fault_id: str) -> OperatingContextResult:
+        data = self._investigation_section(fault_id, "operating_context")
+        return OperatingContextResult(fault_id=fault_id, **data)
+
+    def get_maintenance_history(self, fault_id: str) -> MaintenanceHistoryResult:
+        data = self._investigation_section(fault_id, "maintenance")
+        return MaintenanceHistoryResult(fault_id=fault_id, **data)
+
+    def compare_peer_assets(self, fault_id: str) -> PeerComparisonResult:
+        data = self._investigation_section(fault_id, "peer_comparison")
+        return PeerComparisonResult(fault_id=fault_id, **data)
+
+    def _investigation_section(self, fault_id: str, section: str) -> dict[str, Any]:
+        investigation = self._investigations.get(fault_id)
+        if investigation is None or section not in investigation:
+            raise KeyError(fault_id)
+        return investigation[section]
 
     def list_assets(
         self,

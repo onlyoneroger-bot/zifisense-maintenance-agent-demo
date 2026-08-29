@@ -2,9 +2,9 @@
 
 [![CI](https://github.com/onlyoneroger-bot/zifisense-maintenance-agent-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/onlyoneroger-bot/zifisense-maintenance-agent-demo/actions/workflows/ci.yml)
 
-比赛 Demo 的 REST + MCP 单容器服务。版本 0.2.0 在 Sprint 1 REST 基线上增加真实 MCP Streamable HTTP 接入，以及不依赖 LLM 的设备、当前故障、故障详情和历史故障查询。
+比赛 Demo 的 REST + MCP 单容器服务。版本 0.3.0 提供真实 MCP Streamable HTTP 接入、设备与故障查询、不依赖 LLM 的受控多轮调查编排，以及经用户明确同意的模拟现场补测闭环。
 
-所有比赛目录和故障数据都明确标识为 Fixture。候选诊断不会被描述为最终工程结论；系统不暴露 PLC/DCS 控制工具。当前 `agent_invoke` 仍是诚实降级路径，不伪造 RAG、LLM 推理、引用或审批能力。
+所有比赛目录、故障、监测、工况、维修和同线对比数据都明确标识为 Fixture。候选诊断不会被描述为最终工程结论；人工描述以 `HUMAN_CLAIM/UNVERIFIED` 保存；系统不暴露 PLC/DCS 控制工具，也不伪造 RAG、LLM 引用或审批能力。
 
 ## 服务与端口
 
@@ -25,6 +25,7 @@ GET  /health
 GET  /api/v1/capabilities
 POST /api/v1/evaluation/sessions
 POST /api/v1/agent/invoke
+POST /api/v1/events              FIELD_MEASUREMENT_COMPLETED
 ```
 
 完整 REST V1 的事件、任务查询、审批和重置接口将在后续 Sprint 开放。REST 契约位于 `docs/specs/纵行科技_智能运维Agent_比赛Demo_API_v1.openapi.yaml`。
@@ -37,6 +38,12 @@ list_assets
 list_current_faults
 get_fault_detail
 list_fault_history
+get_monitoring_summary
+get_operating_context
+get_maintenance_history
+compare_peer_assets
+request_field_measurement
+ingest_field_measurement_result
 agent_invoke
 get_task
 ```
@@ -89,13 +96,13 @@ Authorization: Bearer <token>
 .venv/Scripts/python.exe -m pytest
 ```
 
-自动化测试覆盖 REST 回归、双协议 MCP 探测、Bearer/Scope、Tool Schema、查询故事线、REST/MCP 会话共享和 10 并发调用。
+自动化测试覆盖 REST 回归、双协议 MCP 探测、Bearer/Scope、Tool Schema、三轮调查回放、人工信息门控、补测同意与质量门控、REST/MCP 会话共享和 10 并发调用。
 
 ## Docker
 
 ```bash
-docker build -t zifisense-agent-api:0.2.0 .
-docker run --rm -p 8080:8080 zifisense-agent-api:0.2.0
+docker build -t zifisense-agent-api:0.3.0 .
+docker run --rm -p 8080:8080 zifisense-agent-api:0.3.0
 ```
 
 生产域名部署时，把 `MCP_ALLOWED_HOSTS` 设为 JSON 数组，例如 `["agent.example.com"]`；浏览器来源同时加入 `MCP_ALLOWED_ORIGINS`。GitHub Actions 会验证 Ruff、pytest、镜像构建、非 root 用户、8080 健康检查和容器内 MCP 探测。

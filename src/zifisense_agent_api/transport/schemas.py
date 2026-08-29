@@ -66,6 +66,14 @@ class ScenarioSummary(StrictModel):
 
 
 CapabilityCode = Literal[
+    "asset_catalog_query",
+    "current_fault_query",
+    "fault_detail_query",
+    "fault_history_query",
+    "monitoring_summary",
+    "operating_context_query",
+    "maintenance_history_query",
+    "peer_comparison",
     "knowledge_retrieval",
     "context_orchestration",
     "evidence_conflict_detection",
@@ -224,4 +232,38 @@ class AgentInvokeResponse(StrictModel):
     request_id: str
     trace_id: str
     data: AgentResponseData
+    meta: ResponseMeta
+
+
+class FieldMeasurementCompletedPayload(StrictModel):
+    asset_id: str
+    measurement_point_id: str
+    collection_quality: Literal["PASS", "FAIL", "PARTIAL"]
+    operating_condition: str | None = None
+    sound_analysis: dict[str, Any]
+    vibration_analysis: dict[str, Any]
+
+
+class FieldMeasurementCompletedEventRequest(StrictModel):
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: Literal["FIELD_MEASUREMENT_COMPLETED"]
+    source_system: str = Field(min_length=1, max_length=128)
+    occurred_at: datetime
+    evaluation_session_id: str
+    task_id: str
+    payload: FieldMeasurementCompletedPayload
+
+
+class EventIngestData(StrictModel):
+    event_id: str
+    accepted: bool
+    task_id: str
+    task_state: TaskState
+    duplicate: bool
+
+
+class EventIngestResponse(StrictModel):
+    request_id: str
+    trace_id: str
+    data: EventIngestData
     meta: ResponseMeta

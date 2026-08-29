@@ -21,7 +21,13 @@ class ApiKeyAuthenticator:
                 ClientIdentity(
                     client_id="evaluator",
                     scopes=frozenset(
-                        {"capability:read", "evaluation:create", "agent:invoke", "mcp:use"}
+                        {
+                            "capability:read",
+                            "evaluation:create",
+                            "agent:invoke",
+                            "event:write",
+                            "mcp:use",
+                        }
                     ),
                 ),
             ),
