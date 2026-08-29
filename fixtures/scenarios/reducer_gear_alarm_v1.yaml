@@ -1,0 +1,20 @@
+scenario:
+  scenario_id: reducer_gear_alarm_v1
+  name: 主驱动减速机报警调查
+  description: 从一条模拟预测性维护报警建立独立评测会话。
+  suggested_questions:
+    - 当前设备发生了什么？
+    - 当前版本可以验证哪些能力？
+alarm:
+  asset_id: ASSET-REDUCER-001
+  asset_name: 电泳主驱动减速机
+  measurement_point_id: MP-4F040B86-X
+  alarm_id: ALM-20260820-154429
+  alarm_time: "2026-08-20T15:44:29+08:00"
+  severity: WARNING
+  diagnosis_text: 齿轮故障/转子不平衡
+  confidence: 0.82
+  algorithm_version: predictive-fixture-v1
+  source_system: PREDICTIVE_MAINTENANCE_SIMULATOR
+  evidence_summary: X轴RMS上升，宽频振动趋势异常；专业诊断候选为齿轮故障/转子不平衡。
+  is_simulated: true
