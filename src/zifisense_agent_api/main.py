@@ -12,8 +12,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
 from zifisense_agent_api.adapters.fixtures import FixtureCatalog
 from zifisense_agent_api.application.agent_facade import AgentFacade
+from zifisense_agent_api.application.approval_service import ApprovalService
 from zifisense_agent_api.application.evaluation_service import EvaluationService
 from zifisense_agent_api.application.event_service import EventService
+from zifisense_agent_api.application.reset_service import ResetService
+from zifisense_agent_api.application.task_service import TaskService
 from zifisense_agent_api.config import Settings
 from zifisense_agent_api.domain.errors import ApplicationError
 from zifisense_agent_api.infrastructure.auth import ApiKeyAuthenticator
@@ -28,7 +31,7 @@ from zifisense_agent_api.transport.errors import (
     validation_error_handler,
 )
 from zifisense_agent_api.transport.mcp_auth import MCPBearerAuthMiddleware
-from zifisense_agent_api.transport.routers import agent, evaluation, events, system
+from zifisense_agent_api.transport.routers import admin, agent, evaluation, events, system, tasks
 
 
 def create_app(
@@ -46,6 +49,9 @@ def create_app(
     rate_limiter = SlidingWindowRateLimiter(clock=clock)
     evaluation_service = EvaluationService(repository, fixtures)
     event_service = EventService(repository)
+    task_service = TaskService(repository)
+    approval_service = ApprovalService(repository)
+    reset_service = ResetService(repository)
     agent_facade = AgentFacade(repository, catalog)
     mcp_server = build_mcp_server(
         app_version=app_settings.app_version,
@@ -54,6 +60,8 @@ def create_app(
         agent_facade=agent_facade,
         repository=repository,
         event_service=event_service,
+        task_service=task_service,
+        approval_service=approval_service,
     )
     mcp_http_app = mcp_server.streamable_http_app(
         streamable_http_path="/mcp",
@@ -90,6 +98,9 @@ def create_app(
     app.state.rate_limiter = rate_limiter
     app.state.evaluation_service = evaluation_service
     app.state.event_service = event_service
+    app.state.task_service = task_service
+    app.state.approval_service = approval_service
+    app.state.reset_service = reset_service
     app.state.agent_facade = agent_facade
     app.state.repository = repository
     app.state.catalog = catalog
@@ -124,6 +135,8 @@ def create_app(
     app.include_router(evaluation.router)
     app.include_router(agent.router)
     app.include_router(events.router)
+    app.include_router(tasks.router)
+    app.include_router(admin.router)
     app.mount("/", authenticated_mcp_app, name="mcp")
     return app
 

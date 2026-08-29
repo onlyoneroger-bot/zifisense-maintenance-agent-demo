@@ -144,6 +144,10 @@ class TaskResult(MCPModel):
     field_measurement_request: dict[str, Any] | None
     field_measurements: list[dict[str, Any]]
     evidence_version: int
+    pending_approval: dict[str, Any] | None
+    work_order: dict[str, Any] | None
+    maintenance_validation: dict[str, Any] | None
+    timeline: list[dict[str, Any]]
     is_simulated: bool
 
 

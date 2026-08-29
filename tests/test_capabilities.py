@@ -18,9 +18,16 @@ def test_sprint_two_capabilities_match_registered_read_only_tools(client):
         "context_orchestration",
         "human_input_gate",
         "portable_measurement_ingest",
+        "work_order_draft",
+        "approval_gated_write",
+        "maintenance_result_validation",
         "audit_traceability",
     }
-    assert body["data"]["supported_event_types"] == ["FIELD_MEASUREMENT_COMPLETED"]
+    assert body["data"]["supported_event_types"] == [
+        "ALARM_RAISED",
+        "FIELD_MEASUREMENT_COMPLETED",
+        "WORK_ORDER_COMPLETED",
+    ]
     assert body["data"]["scenarios"][0]["scenario_id"] == "reducer_gear_alarm_v1"
     assert body["meta"] == {
         "api_version": "v1",
@@ -29,5 +36,5 @@ def test_sprint_two_capabilities_match_registered_read_only_tools(client):
     }
     boundaries = " ".join(body["data"]["safety_boundaries"])
     assert "explicitly simulated Fixture data" in boundaries
-    assert "not yet available" in boundaries
+    assert "no real EAM, PLC, or DCS" in boundaries
     assert "Production-control actions are not exposed" in boundaries

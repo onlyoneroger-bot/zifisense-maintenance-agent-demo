@@ -11,8 +11,10 @@ from pydantic import Field
 
 from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
 from zifisense_agent_api.application.agent_facade import AgentFacade
+from zifisense_agent_api.application.approval_service import ApprovalService
 from zifisense_agent_api.application.evaluation_service import EvaluationService
 from zifisense_agent_api.application.event_service import EventService
+from zifisense_agent_api.application.task_service import TaskService
 from zifisense_agent_api.infrastructure.repositories import EvaluationRepository
 from zifisense_agent_api.mcp_models import (
     AssetListResult,
@@ -33,10 +35,15 @@ from zifisense_agent_api.mcp_models import (
 )
 from zifisense_agent_api.transport.schemas import (
     AgentInvokeRequest,
+    AlarmRaisedEventRequest,
+    AlarmRaisedPayload,
+    ApprovalDecisionRequest,
     CreateEvaluationSessionRequest,
     CreateEvaluationSessionResponse,
     FieldMeasurementCompletedEventRequest,
     FieldMeasurementCompletedPayload,
+    WorkOrderCompletedEventRequest,
+    WorkOrderCompletedPayload,
 )
 
 DetailModule = Literal[
@@ -68,6 +75,8 @@ def build_mcp_server(
     agent_facade: AgentFacade,
     repository: EvaluationRepository,
     event_service: EventService,
+    task_service: TaskService,
+    approval_service: ApprovalService,
 ) -> MCPServer:
     server = MCPServer(
         name="zifisense-intelligent-maintenance-agent",
@@ -263,6 +272,49 @@ def build_mcp_server(
         )
 
     @server.tool()
+    def ingest_alarm(
+        event_id: str,
+        evaluation_session_id: str,
+        alarm_id: str,
+        asset_id: str,
+        measurement_point_id: str,
+        severity: Literal["INFO", "WARNING", "CRITICAL"],
+        diagnosis_text: str,
+        confidence: Annotated[float, Field(ge=0, le=1)],
+        algorithm_version: str,
+        evidence_features: list[dict[str, Any]] | None = None,
+        source_system: str = "PREDICTIVE_MAINTENANCE_SIMULATOR",
+    ) -> dict[str, Any]:
+        """Ingest a new simulated alarm and create an isolated task in an evaluation session."""
+        request_id, trace_id = _request_ids()
+        try:
+            result = event_service.ingest_alarm(
+                request=AlarmRaisedEventRequest(
+                    event_id=event_id,
+                    event_type="ALARM_RAISED",
+                    source_system=source_system,
+                    occurred_at=datetime.now().astimezone(),
+                    evaluation_session_id=evaluation_session_id,
+                    payload=AlarmRaisedPayload(
+                        alarm_id=alarm_id,
+                        asset_id=asset_id,
+                        measurement_point_id=measurement_point_id,
+                        severity=severity,
+                        diagnosis_text=diagnosis_text,
+                        confidence=confidence,
+                        algorithm_version=algorithm_version,
+                        evidence_features=evidence_features or [],
+                    ),
+                ),
+                client_id="evaluator",
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
+        return result.model_dump(mode="json")
+
+    @server.tool()
     def ingest_field_measurement_result(
         event_id: str,
         evaluation_session_id: str,
@@ -293,6 +345,102 @@ def build_mcp_server(
                         operating_condition=operating_condition,
                         sound_analysis=sound_analysis,
                         vibration_analysis=vibration_analysis,
+                    ),
+                ),
+                client_id="evaluator",
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
+        return result.model_dump(mode="json")
+
+    @server.tool()
+    def draft_work_order(
+        evaluation_session_id: str,
+        conversation_id: str,
+        task_id: str,
+    ) -> dict[str, Any]:
+        """Draft a simulated work order only after quality-gated field evidence."""
+        request_id, trace_id = _request_ids()
+        try:
+            result = agent_facade.invoke(
+                request=AgentInvokeRequest(
+                    evaluation_session_id=evaluation_session_id,
+                    conversation_id=conversation_id,
+                    task_id=task_id,
+                    message="生成工单草稿",
+                ),
+                client_id="evaluator",
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
+        return result.model_dump(mode="json")
+
+    @server.tool()
+    def decide_work_order_approval(
+        task_id: str,
+        approval_id: str,
+        approval_challenge: str,
+        decision: Literal["APPROVE", "REJECT"],
+        evidence_version: Annotated[int, Field(ge=1)],
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply a one-time explicit approval decision to a simulated work order."""
+        request_id, trace_id = _request_ids()
+        try:
+            result = approval_service.decide(
+                task_id=task_id,
+                request=ApprovalDecisionRequest(
+                    approval_id=approval_id,
+                    approval_challenge=approval_challenge,
+                    decision=decision,
+                    evidence_version=evidence_version,
+                    comment=comment,
+                ),
+                client_id="evaluator",
+                request_id=request_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            raise ToolError(str(exc)) from exc
+        return result.model_dump(mode="json")
+
+    @server.tool()
+    def ingest_work_order_completion(
+        event_id: str,
+        evaluation_session_id: str,
+        task_id: str,
+        work_order_id: str,
+        actual_fault: str,
+        inspection_findings: str,
+        actions_taken: list[str],
+        post_maintenance_diagnosis: dict[str, Any],
+        parts_replaced: list[str] | None = None,
+        source_system: str = "EAM_SIMULATOR",
+    ) -> dict[str, Any]:
+        """Ingest simulated maintenance completion and validate the post-maintenance result."""
+        request_id, trace_id = _request_ids()
+        now = datetime.now().astimezone()
+        try:
+            result = event_service.ingest_work_order_completion(
+                request=WorkOrderCompletedEventRequest(
+                    event_id=event_id,
+                    event_type="WORK_ORDER_COMPLETED",
+                    source_system=source_system,
+                    occurred_at=now,
+                    evaluation_session_id=evaluation_session_id,
+                    task_id=task_id,
+                    payload=WorkOrderCompletedPayload(
+                        work_order_id=work_order_id,
+                        actual_fault=actual_fault,
+                        inspection_findings=inspection_findings,
+                        actions_taken=actions_taken,
+                        parts_replaced=parts_replaced or [],
+                        completed_at=now,
+                        post_maintenance_diagnosis=post_maintenance_diagnosis,
                     ),
                 ),
                 client_id="evaluator",
@@ -342,6 +490,12 @@ def build_mcp_server(
         claims = repository.list_human_claims(task_id)
         field_request = repository.get_field_measurement_request(task_id)
         field_measurements = repository.list_field_measurement_events(task_id)
+        snapshot = task_service.get_snapshot(
+            task_id=task_id,
+            client_id="evaluator",
+            request_id="mcp_snapshot",
+            trace_id="mcp_snapshot_trace",
+        ).data
         return TaskResult(
             task_id=task.id,
             evaluation_session_id=evaluation.id,
@@ -399,6 +553,16 @@ def build_mcp_server(
                 for item in field_measurements
             ],
             evidence_version=task.evidence_version,
+            pending_approval=snapshot.pending_approval.model_dump(mode="json")
+            if snapshot.pending_approval
+            else None,
+            work_order=snapshot.work_order.model_dump(mode="json")
+            if snapshot.work_order
+            else None,
+            maintenance_validation=snapshot.maintenance_validation.model_dump(mode="json")
+            if snapshot.maintenance_validation
+            else None,
+            timeline=[item.model_dump(mode="json") for item in snapshot.timeline],
             is_simulated=alarm.is_simulated,
         )
 

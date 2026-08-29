@@ -108,17 +108,36 @@ def get_capabilities(
                     ),
                 ),
                 CapabilityItem(
+                    code="work_order_draft",
+                    name="证据门控工单草稿",
+                    verification_hint="补测 PASS 后请求生成工单草稿，检查 pending_approval。",
+                ),
+                CapabilityItem(
+                    code="approval_gated_write",
+                    name="一次性审批式模拟提交",
+                    verification_hint="使用 Challenge 与当前 evidence_version 批准或拒绝模拟工单。",
+                ),
+                CapabilityItem(
+                    code="maintenance_result_validation",
+                    name="维修结果验证",
+                    verification_hint="回传 WORK_ORDER_COMPLETED，检查 VERIFIED 或 CONFLICTING。",
+                ),
+                CapabilityItem(
                     code="audit_traceability",
                     name="会话与工具审计回放",
                     verification_hint="调用 get_task 检查对话轮次、意图、工具和人工声明。",
                 ),
             ],
-            supported_event_types=["FIELD_MEASUREMENT_COMPLETED"],
+            supported_event_types=[
+                "ALARM_RAISED",
+                "FIELD_MEASUREMENT_COMPLETED",
+                "WORK_ORDER_COMPLETED",
+            ],
             safety_boundaries=[
                 "All current catalog, fault, monitoring, context, maintenance, and "
                 "peer-comparison data are explicitly simulated Fixture data.",
-                "Alarm and work-order-completion event ingestion, plus approval-gated "
-                "work-order writes, are not yet available.",
+                "All writes target isolated simulated storage; no real EAM, PLC, or DCS "
+                "is connected.",
                 "External industrial systems will be connected through explicitly "
                 "simulated adapters.",
                 "LLM does not diagnose raw high-frequency time-series data.",

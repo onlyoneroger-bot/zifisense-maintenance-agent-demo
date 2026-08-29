@@ -25,6 +25,10 @@ EXPECTED_TOOLS = {
     "compare_peer_assets",
     "request_field_measurement",
     "ingest_field_measurement_result",
+    "draft_work_order",
+    "decide_work_order_approval",
+    "ingest_work_order_completion",
+    "ingest_alarm",
 }
 
 

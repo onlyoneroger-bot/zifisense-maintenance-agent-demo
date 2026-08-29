@@ -3,7 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import (
+    Boolean,
+    Float,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -49,6 +59,9 @@ class AlarmEventRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     alarm_id: Mapped[str] = mapped_column(String(128), index=True)
+    external_event_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True
+    )
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
     asset_id: Mapped[str] = mapped_column(String(128))
     measurement_point_id: Mapped[str] = mapped_column(String(128))
@@ -146,6 +159,56 @@ class FieldMeasurementEventRecord(Base):
     created_at: Mapped[str] = mapped_column(String(64))
 
 
+class WorkOrderRecord(Base):
+    __tablename__ = "work_orders"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_work_order_task"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(Text)
+    recommended_window: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[str] = mapped_column(String(64))
+
+
+class ApprovalRecord(Base):
+    __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_approval_task"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    approval_challenge: Mapped[str] = mapped_column(String(256))
+    approval_type: Mapped[str] = mapped_column(String(64))
+    evidence_version: Mapped[int]
+    status: Mapped[str] = mapped_column(String(32))
+    expires_at: Mapped[str] = mapped_column(String(64))
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(64))
+    decided_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class WorkOrderCompletionEventRecord(Base):
+    __tablename__ = "work_order_completion_events"
+
+    event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    evaluation_session_id: Mapped[str] = mapped_column(
+        ForeignKey("evaluation_sessions.id"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    work_order_id: Mapped[str] = mapped_column(ForeignKey("work_orders.id"), index=True)
+    source_system: Mapped[str] = mapped_column(String(128))
+    occurred_at: Mapped[str] = mapped_column(String(64))
+    actual_fault: Mapped[str] = mapped_column(Text)
+    payload_json: Mapped[str] = mapped_column(Text)
+    validation_status: Mapped[str] = mapped_column(String(32))
+    validation_summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(64))
+
+
 class Database:
     def __init__(self, url: str) -> None:
         if url.startswith("sqlite:///") and not url.endswith(":memory:"):
@@ -159,6 +222,29 @@ class Database:
 
     def create_schema(self) -> None:
         Base.metadata.create_all(self.engine)
+        if self.engine.dialect.name != "sqlite":
+            return
+        schema = inspect(self.engine)
+        task_columns = {item["name"] for item in schema.get_columns("tasks")}
+        alarm_columns = {item["name"] for item in schema.get_columns("alarm_events")}
+        with self.engine.begin() as connection:
+            if "evidence_version" not in task_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE tasks ADD COLUMN evidence_version "
+                        "INTEGER NOT NULL DEFAULT 1"
+                    )
+                )
+            if "external_event_id" not in alarm_columns:
+                connection.execute(
+                    text("ALTER TABLE alarm_events ADD COLUMN external_event_id VARCHAR(128)")
+                )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ux_alarm_external_event_id "
+                    "ON alarm_events(external_event_id)"
+                )
+            )
 
     def close(self) -> None:
         self.engine.dispose()

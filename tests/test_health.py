@@ -8,6 +8,6 @@ def test_health_is_public_fast_and_minimal(client):
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["version"] == "0.3.0"
+    assert response.json()["version"] == "1.0.0"
     assert set(response.json()) == {"status", "version", "timestamp"}
     assert elapsed_ms < 200

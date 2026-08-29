@@ -57,9 +57,25 @@
 
 在 `consent=true` 的明确同意条件下，为指定评测任务创建唯一的模拟现场补测请求。重复调用返回原请求，不重复调度；没有这个调用，补测结果不会被接收。
 
+### `ingest_alarm`
+
+向已有评测会话注入一条模拟专业报警并创建隔离任务。`event_id` 幂等；改变正文重放会返回冲突。
+
 ### `ingest_field_measurement_result`
 
 回传专业便携分析服务生成的结构化声学和振动摘要。`PASS` 结果进入人工工程判断，`PARTIAL/FAIL` 保持待补证；不接收或伪造原始高频波形。
+
+### `draft_work_order`
+
+仅在存在质量合格的现场补测证据后创建模拟工单草稿，并返回一次性审批 Challenge。调用本身不会提交工单。
+
+### `decide_work_order_approval`
+
+使用 `approval_id + approval_challenge + evidence_version` 明确批准或拒绝。Challenge 只能使用一次、会过期；证据版本变化会安全失败。
+
+### `ingest_work_order_completion`
+
+回传模拟维修完成结果和结构化维修后诊断。改善则验证并关闭模拟任务；未改善或结论不足则保留冲突/待复核状态，不自动形成生产训练标签。
 
 ### `agent_invoke`
 

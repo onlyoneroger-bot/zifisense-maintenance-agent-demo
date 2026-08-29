@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     app_mode: str = "competition"
-    app_version: str = "0.3.0"
+    app_version: str = "1.0.0"
     api_version: str = "v1"
     database_url: str = "sqlite:///./data/agent.db"
     fixture_dir: Path = Field(default=Path("./fixtures"))

@@ -26,6 +26,9 @@ class ApiKeyAuthenticator:
                             "evaluation:create",
                             "agent:invoke",
                             "event:write",
+                            "task:read",
+                            "approval:write",
+                            "admin:write",
                             "mcp:use",
                         }
                     ),

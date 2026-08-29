@@ -18,6 +18,7 @@ from zifisense_agent_api.transport.schemas import (
     EvidenceItem,
     Fact,
     OpenQuestion,
+    PendingApproval,
     RecommendedAction,
     ResponseMeta,
     SystemDiagnosis,
@@ -34,6 +35,7 @@ class InvestigationIntent(StrEnum):
     HISTORY = "HISTORY"
     HUMAN_CONTEXT = "HUMAN_CONTEXT"
     FIELD_MEASUREMENT_CONSENT = "FIELD_MEASUREMENT_CONSENT"
+    WORK_ORDER_DRAFT = "WORK_ORDER_DRAFT"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
@@ -122,6 +124,7 @@ class AgentFacade:
             InvestigationIntent.HISTORY,
             InvestigationIntent.HUMAN_CONTEXT,
             InvestigationIntent.FIELD_MEASUREMENT_CONSENT,
+            InvestigationIntent.WORK_ORDER_DRAFT,
         }:
             loaded["monitoring"] = run_tool(
                 "get_monitoring_summary",
@@ -220,8 +223,50 @@ class AgentFacade:
                 )
             )
 
+        work_order_approval = None
+        if intent is InvestigationIntent.WORK_ORDER_DRAFT:
+            passed_field_event = next(
+                (
+                    item
+                    for item in reversed(field_events)
+                    if item.collection_quality == "PASS"
+                ),
+                None,
+            )
+            if passed_field_event is not None:
+                work_order, approval, created = (
+                    self._repository.get_or_create_work_order_approval(
+                        evaluation_session_id=evaluation.id,
+                        task_id=task.id,
+                    )
+                )
+                if approval.status == "PENDING":
+                    work_order_approval = (work_order, approval)
+                else:
+                    loaded["work_order_status"] = approval.status
+                tool_executions.append(
+                    ToolExecution(
+                        tool_name="draft_work_order",
+                        status="SUCCEEDED" if created else "SKIPPED",
+                        source_system="EAM_SIMULATOR",
+                        elapsed_ms=0,
+                        is_simulated=True,
+                    )
+                )
+            else:
+                tool_executions.append(
+                    ToolExecution(
+                        tool_name="draft_work_order",
+                        status="SKIPPED",
+                        source_system="EVIDENCE_GATE",
+                        elapsed_ms=0,
+                        is_simulated=True,
+                    )
+                )
         existing_turns = self._repository.list_conversation_turns(task.id)
         next_state = self._next_state(TaskState(task.state), intent, len(existing_turns))
+        if work_order_approval is not None:
+            next_state = TaskState.APPROVAL_PENDING
         if next_state.value != task.state:
             self._repository.update_task_state(task.id, next_state.value)
 
@@ -234,6 +279,7 @@ class AgentFacade:
             tool_executions=tool_executions,
             human_claim=human_claim,
             field_request=field_request,
+            work_order_approval=work_order_approval,
         )
         self._repository.append_conversation_turn(
             evaluation_session_id=evaluation.id,
@@ -268,6 +314,11 @@ class AgentFacade:
         )
         if any(pattern in normalized for pattern in consent_patterns):
             return InvestigationIntent.FIELD_MEASUREMENT_CONSENT
+        if any(
+            pattern in normalized
+            for pattern in ("生成工单", "创建工单", "工单草稿", "提交维修建议")
+        ):
+            return InvestigationIntent.WORK_ORDER_DRAFT
         human_patterns = (
             "提高了",
             "降低了",
@@ -320,6 +371,7 @@ class AgentFacade:
         tool_executions: list[ToolExecution],
         human_claim,
         field_request,
+        work_order_approval,
     ) -> AgentResponseData:
         observed_at = datetime.fromisoformat(alarm.observed_at)
         alarm_evidence_id = alarm.evidence_id
@@ -548,7 +600,14 @@ class AgentFacade:
                 )
             )
 
-        answer = self._answer_for(intent, fault, loaded, human_claim, field_request)
+        answer = self._answer_for(
+            intent,
+            fault,
+            loaded,
+            human_claim,
+            field_request,
+            work_order_approval,
+        )
         open_questions = self._open_questions(loaded, human_claim)
         return AgentResponseData(
             answer=answer,
@@ -577,7 +636,22 @@ class AgentFacade:
                     requires_approval=True,
                 ),
             ],
-            pending_approval=None,
+            pending_approval=(
+                PendingApproval(
+                    approval_id=work_order_approval[1].id,
+                    approval_challenge=work_order_approval[1].approval_challenge,
+                    approval_type="SUBMIT_WORK_ORDER",
+                    evidence_version=work_order_approval[1].evidence_version,
+                    expires_at=datetime.fromisoformat(work_order_approval[1].expires_at),
+                    impact_preview={
+                        "work_order_id": work_order_approval[0].id,
+                        "target": "SIMULATED_EAM",
+                        "production_write": False,
+                    },
+                )
+                if work_order_approval is not None
+                else None
+            ),
         )
 
     @staticmethod
@@ -587,6 +661,7 @@ class AgentFacade:
         loaded: dict[str, Any],
         human_claim,
         field_request,
+        work_order_approval,
     ) -> str:
         prefix = (
             f"当前模拟调查记录 {fault['fault_id']} 的专业候选诊断是“"
@@ -597,6 +672,23 @@ class AgentFacade:
             return (
                 "该问题不属于设备智能运维范围。我可以查询设备列表、当前故障、监测趋势、"
                 "近期工况、维修历史、同类设备对比和历史故障。"
+            )
+        if intent is InvestigationIntent.WORK_ORDER_DRAFT:
+            decided_status = loaded.get("work_order_status")
+            if decided_status is not None:
+                return (
+                    prefix
+                    + f"该模拟工单的审批已处于 {decided_status}，不会重新签发或恢复旧 Challenge。"
+                )
+            if work_order_approval is None:
+                return (
+                    prefix
+                    + "当前没有质量合格的现场补测证据，证据门控拒绝生成工单草稿。"
+                )
+            return (
+                prefix
+                + f"已生成模拟工单草稿 {work_order_approval[0].id}，"
+                "尚未提交；必须使用一次性审批 Challenge 明确批准。"
             )
         field_measurements = loaded.get("field_measurements", [])
         if field_measurements:

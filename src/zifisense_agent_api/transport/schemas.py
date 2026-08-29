@@ -244,6 +244,27 @@ class FieldMeasurementCompletedPayload(StrictModel):
     vibration_analysis: dict[str, Any]
 
 
+class AlarmRaisedPayload(StrictModel):
+    alarm_id: str
+    asset_id: str
+    measurement_point_id: str
+    severity: Literal["INFO", "WARNING", "CRITICAL"]
+    diagnosis_text: str
+    confidence: float = Field(ge=0, le=1)
+    algorithm_version: str
+    evidence_features: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AlarmRaisedEventRequest(StrictModel):
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: Literal["ALARM_RAISED"]
+    source_system: str = Field(min_length=1, max_length=128)
+    occurred_at: datetime
+    evaluation_session_id: str
+    task_id: str | None = None
+    payload: AlarmRaisedPayload
+
+
 class FieldMeasurementCompletedEventRequest(StrictModel):
     event_id: str = Field(min_length=1, max_length=128)
     event_type: Literal["FIELD_MEASUREMENT_COMPLETED"]
@@ -252,6 +273,26 @@ class FieldMeasurementCompletedEventRequest(StrictModel):
     evaluation_session_id: str
     task_id: str
     payload: FieldMeasurementCompletedPayload
+
+
+class WorkOrderCompletedPayload(StrictModel):
+    work_order_id: str
+    actual_fault: str
+    inspection_findings: str
+    actions_taken: list[str]
+    parts_replaced: list[str] = Field(default_factory=list)
+    completed_at: datetime
+    post_maintenance_diagnosis: dict[str, Any]
+
+
+class WorkOrderCompletedEventRequest(StrictModel):
+    event_id: str = Field(min_length=1, max_length=128)
+    event_type: Literal["WORK_ORDER_COMPLETED"]
+    source_system: str = Field(min_length=1, max_length=128)
+    occurred_at: datetime
+    evaluation_session_id: str
+    task_id: str
+    payload: WorkOrderCompletedPayload
 
 
 class EventIngestData(StrictModel):
@@ -266,4 +307,95 @@ class EventIngestResponse(StrictModel):
     request_id: str
     trace_id: str
     data: EventIngestData
+    meta: ResponseMeta
+
+
+class EvidenceConflict(StrictModel):
+    conflict_id: str
+    summary: str
+    evidence_ids: list[str]
+    status: Literal["OPEN", "RESOLVED", "ACCEPTED_UNCERTAINTY"]
+
+
+class WorkOrderSummary(StrictModel):
+    work_order_id: str
+    status: Literal["DRAFT", "APPROVAL_PENDING", "SUBMITTED", "IN_PROGRESS", "COMPLETED"]
+    title: str
+    recommended_window: str | None = None
+
+
+class MaintenanceValidation(StrictModel):
+    status: Literal["PENDING", "ENGINEER_CONFIRMED", "VERIFIED", "CONFLICTING"]
+    actual_fault: str
+    sample_status: Literal["NOT_ELIGIBLE", "PENDING_REVIEW", "APPROVED"]
+    summary: str | None = None
+
+
+class TimelineEvent(StrictModel):
+    event_id: str
+    event_type: str
+    occurred_at: datetime
+    summary: str
+
+
+class TaskSnapshot(StrictModel):
+    task_id: str
+    evaluation_session_id: str
+    task_state: TaskState
+    evidence_version: int = Field(ge=1)
+    alarm: dict[str, Any] | None = None
+    evidence: list[EvidenceItem]
+    conflicts: list[EvidenceConflict]
+    tool_executions: list[ToolExecution]
+    pending_approval: PendingApproval | None = None
+    work_order: WorkOrderSummary | None = None
+    maintenance_validation: MaintenanceValidation | None = None
+    timeline: list[TimelineEvent]
+
+
+class TaskSnapshotResponse(StrictModel):
+    request_id: str
+    trace_id: str
+    data: TaskSnapshot
+    meta: ResponseMeta
+
+
+class ApprovalDecisionRequest(StrictModel):
+    approval_id: str
+    approval_challenge: str
+    decision: Literal["APPROVE", "REJECT"]
+    evidence_version: int = Field(ge=1)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalDecisionData(StrictModel):
+    approval_id: str
+    decision: Literal["APPROVE", "REJECT"]
+    task_id: str
+    task_state: TaskState
+    work_order_id: str | None = None
+
+
+class ApprovalDecisionResponse(StrictModel):
+    request_id: str
+    trace_id: str
+    data: ApprovalDecisionData
+    meta: ResponseMeta
+
+
+class ResetRequest(StrictModel):
+    scope: Literal["SESSION", "ALL_FIXTURES"]
+    evaluation_session_id: str | None = None
+
+
+class ResetData(StrictModel):
+    scope: Literal["SESSION", "ALL_FIXTURES"]
+    status: Literal["COMPLETED"]
+    reset_count: int = Field(ge=0)
+
+
+class ResetResponse(StrictModel):
+    request_id: str
+    trace_id: str
+    data: ResetData
     meta: ResponseMeta
