@@ -20,7 +20,9 @@ class ApiKeyAuthenticator:
                 settings.evaluator_api_key_hash,
                 ClientIdentity(
                     client_id="evaluator",
-                    scopes=frozenset({"capability:read", "evaluation:create", "agent:invoke"}),
+                    scopes=frozenset(
+                        {"capability:read", "evaluation:create", "agent:invoke", "mcp:use"}
+                    ),
                 ),
             ),
             (settings.limited_api_key_hash, ClientIdentity("limited", frozenset())),

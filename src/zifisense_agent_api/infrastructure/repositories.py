@@ -137,6 +137,21 @@ class EvaluationRepository:
                 ).all()
             )
 
+    def get_task_snapshot(
+        self, evaluation_session_id: str, task_id: str
+    ) -> tuple[
+        EvaluationSessionRecord | None,
+        TaskRecord | None,
+        AlarmEventRecord | None,
+    ]:
+        with self._database.session_factory() as session:
+            evaluation = session.get(EvaluationSessionRecord, evaluation_session_id)
+            task = session.get(TaskRecord, task_id)
+            alarm = session.scalar(
+                select(AlarmEventRecord).where(AlarmEventRecord.task_id == task_id)
+            )
+            return evaluation, task, alarm
+
 
 def decode_idempotent_response(record: IdempotencyRecord) -> dict:
     return json.loads(record.response_json)

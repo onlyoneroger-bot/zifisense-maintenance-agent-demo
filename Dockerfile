@@ -2,17 +2,21 @@ FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DATABASE_URL=sqlite:////app/data/agent.db
+    DATABASE_URL=sqlite:////app/data/agent.db \
+    PATH=/app/.venv/bin:$PATH
 
 WORKDIR /app
 
 RUN groupadd --system agent && useradd --system --gid agent --home-dir /app agent
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY fixtures ./fixtures
 
-RUN pip install --no-cache-dir . && mkdir -p /app/data && chown -R agent:agent /app
+RUN pip install --no-cache-dir uv==0.12.6 \
+    && uv sync --frozen --no-dev --no-editable \
+    && mkdir -p /app/data \
+    && chown -R agent:agent /app
 
 USER agent
 EXPOSE 8080

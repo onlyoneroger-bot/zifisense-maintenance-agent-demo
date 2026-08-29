@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     app_mode: str = "competition"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
     api_version: str = "v1"
     database_url: str = "sqlite:///./data/agent.db"
     fixture_dir: Path = Field(default=Path("./fixtures"))
@@ -24,3 +24,8 @@ class Settings(BaseSettings):
     limited_api_key_hash: str = "e15d666e6ed2ac18a4af2bd61bebb3bb779d9c9ad1d369f0c0e18e569323adbe"
     rate_limit_total_per_minute: int = Field(default=60, ge=1)
     rate_limit_agent_per_minute: int = Field(default=20, ge=1)
+    rate_limit_mcp_per_minute: int = Field(default=100, ge=1)
+    mcp_allowed_hosts: list[str] = Field(
+        default_factory=lambda: ["127.0.0.1:*", "localhost:*", "testserver"]
+    )
+    mcp_allowed_origins: list[str] = Field(default_factory=list)

@@ -76,8 +76,8 @@ def test_invalid_or_missing_idempotency_key_maps_to_400(client):
 
 
 def test_five_concurrent_sessions_are_isolated(app):
-    def create(index: int) -> dict:
-        with TestClient(app) as local_client:
+    with TestClient(app) as local_client:
+        def create(index: int) -> dict:
             response = local_client.post(
                 "/api/v1/evaluation/sessions",
                 headers={**AUTH_HEADERS, "Idempotency-Key": f"concurrent-{index:03d}"},
@@ -86,8 +86,8 @@ def test_five_concurrent_sessions_are_isolated(app):
             assert response.status_code == 201, response.text
             return response.json()["data"]
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results = list(executor.map(create, range(5)))
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(create, range(5)))
 
     assert len({item["evaluation_session_id"] for item in results}) == 5
     assert len({item["conversation_id"] for item in results}) == 5

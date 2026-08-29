@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ZiFiSense Intelligent Maintenance Agent API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     Competition evaluation API for the ZiFiSense intelligent maintenance Agent.
     The API exposes an isolated evaluation session, natural-language Agent invocation,
@@ -330,7 +330,7 @@ components:
           enum: [ok]
         version:
           type: string
-          example: 0.1.0
+          example: 0.2.0
         timestamp:
           type: string
           format: date-time
@@ -414,7 +414,7 @@ components:
               example: zifisense-intelligent-maintenance-agent
             version:
               type: string
-              example: 0.1.0
+              example: 0.2.0
             locale:
               type: string
               example: zh-CN

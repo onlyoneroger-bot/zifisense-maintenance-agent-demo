@@ -8,6 +8,8 @@ The OpenAPI file describes the complete intended REST V1 contract. The runtime c
 
 Runtime behavior and automated tests are authoritative for what is currently implemented.
 
-## MCP status
+## MCP Streamable HTTP
 
-MCP is planned but is not implemented in this public repository baseline. A future change will add the Streamable HTTP endpoint and its machine-readable Tool schemas.
+- `specs/纵行科技_智能运维Agent_MCP_Tools_v1.md`
+
+The runtime endpoint is `/mcp`. `tools/list` is the machine-readable authority for Tool input and output schemas.
