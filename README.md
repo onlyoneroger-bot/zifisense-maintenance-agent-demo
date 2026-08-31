@@ -186,13 +186,13 @@ docker compose up --build --detach
 
 ## 公网正式部署
 
-正式环境使用 `compose.production.yaml` 和 Caddy：只有 Caddy 对外暴露 80/443，应用的 8080 端口仅在容器网络可见；Caddy 自动申请和续期 HTTPS 证书。
+正式环境默认使用标准文件名 `docker-compose.yml` 和 Caddy：只有 Caddy 对外暴露 80/443，应用的 8080 端口仅在容器网络可见；Caddy 自动申请和续期 HTTPS 证书。`compose.production.yaml` 保留为等价兼容文件，并由自动化测试保证两者不漂移。
 
 ```bash
 cp .env.production.example .env.production
 # 填写 MCP_DOMAIN、ACME_EMAIL、API_CLIENTS_JSON 等真实值
-docker compose --env-file .env.production -f compose.production.yaml config
-docker compose --env-file .env.production -f compose.production.yaml up --build --detach
+docker compose --env-file .env.production config
+docker compose --env-file .env.production up --build --detach
 ```
 
 用对侧将采用的官方 MCP SDK 做上线验收：

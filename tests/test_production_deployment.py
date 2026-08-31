@@ -9,6 +9,26 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_standard_compose_matches_production_compose():
+    standard = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    production = yaml.safe_load((ROOT / "compose.production.yaml").read_text(encoding="utf-8"))
+
+    assert standard == production
+
+
+def test_dockerfile_is_reproducible_and_runs_as_non_root():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM python:3.11-slim AS builder" in dockerfile
+    assert "FROM python:3.11-slim AS runtime" in dockerfile
+    assert "uv sync --frozen --no-dev --no-editable" in dockerfile
+    assert "COPY --from=builder" in dockerfile
+    assert "USER agent" in dockerfile
+    assert "HEALTHCHECK" in dockerfile
+    assert "EXPOSE 8080" in dockerfile
+    assert "COPY . " not in dockerfile
+
+
 def test_production_compose_exposes_only_caddy_and_hardens_application():
     compose = yaml.safe_load((ROOT / "compose.production.yaml").read_text(encoding="utf-8"))
     services = compose["services"]

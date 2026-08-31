@@ -24,12 +24,14 @@
 ## 3. 配置检查与启动
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml config
-docker compose --env-file .env.production -f compose.production.yaml build --pull
-docker compose --env-file .env.production -f compose.production.yaml up -d
-docker compose --env-file .env.production -f compose.production.yaml ps
-docker compose --env-file .env.production -f compose.production.yaml logs --tail=100 maintenance-agent caddy
+docker compose --env-file .env.production config
+docker compose --env-file .env.production build --pull
+docker compose --env-file .env.production up -d
+docker compose --env-file .env.production ps
+docker compose --env-file .env.production logs --tail=100 maintenance-agent caddy
 ```
+
+上述命令默认读取 `docker-compose.yml`。`compose.production.yaml` 是内容等价的兼容文件，需要显式文件名的自动化平台仍可继续使用。
 
 Caddy 使用域名自动申请和续期证书。应用端口 8080 不映射到宿主机，只能由同一 Compose 网络中的 Caddy 访问。正式 MCP 地址为：
 

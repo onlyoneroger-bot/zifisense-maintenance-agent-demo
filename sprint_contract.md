@@ -57,6 +57,53 @@ Contract 状态：已完成
 
 ---
 
+## Sprint 4：标准 Docker 交付文件
+
+### 目标
+
+- [x] 生成可复现、非 root、带健康检查的标准 `Dockerfile`。
+- [x] 生成标准文件名 `docker-compose.yml`，直接承接现有正式 HTTPS 部署方案。
+- [x] 保持 `compose.production.yaml` 兼容，并用自动化测试防止两份生产配置漂移。
+
+### 文件清单
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `compose.production.yaml`
+- `tests/test_production_deployment.py`
+- `README.md`
+- `docs/PRODUCTION_DEPLOYMENT.md`
+- `.harness_context.md`
+
+### Definition of Done
+
+- [x] Dockerfile 使用锁文件安装生产依赖，不复制 `.env`、测试、数据库或本地虚拟环境。
+- [x] 运行镜像使用非 root 用户，监听 8080，并包含 `/health` 健康检查。
+- [x] `docker-compose.yml` 只由 Caddy 暴露 80/443，应用 8080 仅在 Compose 网络可见。
+- [x] Compose 强制要求正式域名、ACME 邮箱及 `API_CLIENTS_JSON`，并挂载数据和证书持久化卷。
+- [x] `docker-compose.yml` 与 `compose.production.yaml` 解析后的配置完全一致。
+- [x] Pytest 生产部署测试与 Ruff 全部通过。
+
+### 验证方法
+
+1. `python -m pytest tests/test_production_deployment.py`
+2. `python -m ruff check tests/test_production_deployment.py`
+3. 在具备 Docker CLI 的服务器执行 `docker compose --env-file .env.production config` 与 `docker compose build --pull`。
+
+### Contract 确认
+
+- [x] Generator 接受上述范围和完成标准。
+- [x] Evaluator 接受仅按上述标准验收。
+- [x] 用户明确要求生成 `Dockerfile` 和 `docker-compose.yml`。
+
+Contract 创建时间：2026-08-31
+
+本地验收结果：生产部署测试 5/5、全量 Pytest 94/94、Ruff 通过，两份 Compose 解析后完全一致。本机没有 Docker CLI，实际镜像构建与 Caddy 证书签发仍须在部署服务器验证。
+
+Contract 状态：实现完成 / 本地验收通过
+
+---
+
 ## Sprint 3：MCP 正式部署兼容性加固
 
 ### 目标
