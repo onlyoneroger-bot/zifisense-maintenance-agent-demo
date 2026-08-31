@@ -1,0 +1,14 @@
+id: judge_agent_harness
+name: 评委3：AI Agent Harness 安全专家
+weight: 30
+max_steps: 50
+mode: deterministic
+llm_enabled: false
+architecture_reference: deepseek-harness
+hard_fail_categories:
+  - least_privilege
+  - isolation
+  - injection
+  - human_gate
+  - approval
+  - replay

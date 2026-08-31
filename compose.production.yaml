@@ -1,0 +1,79 @@
+services:
+  maintenance-agent:
+    build:
+      context: .
+    image: "${AGENT_IMAGE:-zifisense-maintenance-agent-demo:1.0.0}"
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8080"
+    environment:
+      APP_MODE: production
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
+      DATABASE_URL: sqlite:////app/data/agent.db
+      API_CLIENTS_JSON: "${API_CLIENTS_JSON:?Set API_CLIENTS_JSON in .env.production}"
+      RATE_LIMIT_TOTAL_PER_MINUTE: "${RATE_LIMIT_TOTAL_PER_MINUTE:-6000}"
+      RATE_LIMIT_AGENT_PER_MINUTE: "${RATE_LIMIT_AGENT_PER_MINUTE:-600}"
+      RATE_LIMIT_MCP_PER_MINUTE: "${RATE_LIMIT_MCP_PER_MINUTE:-6000}"
+      MCP_ALLOWED_HOSTS: '["${MCP_DOMAIN:?Set MCP_DOMAIN in .env.production}"]'
+      MCP_ALLOWED_ORIGINS: '${MCP_ALLOWED_ORIGINS:-[]}'
+      MCP_SYNC_DEADLINE_SECONDS: "${MCP_SYNC_DEADLINE_SECONDS:-25}"
+      LLM_ENABLED: "${LLM_ENABLED:-false}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-deepseek}"
+      LLM_MODEL: "${LLM_MODEL:-deepseek-v4-flash}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.deepseek.com}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      LLM_TIMEOUT_SECONDS: "${LLM_TIMEOUT_SECONDS:-12}"
+      LLM_MAX_RETRIES: "${LLM_MAX_RETRIES:-0}"
+      LLM_MAX_OUTPUT_TOKENS: "${LLM_MAX_OUTPUT_TOKENS:-1200}"
+      LLM_PROMPT_VERSION: "${LLM_PROMPT_VERSION:-maintenance-agent-v1}"
+      LLM_DAILY_BUDGET_CNY: "${LLM_DAILY_BUDGET_CNY:-10.00}"
+      LLM_BUDGET_TIMEZONE: "${LLM_BUDGET_TIMEZONE:-Asia/Shanghai}"
+      LLM_USD_TO_CNY_RATE: "${LLM_USD_TO_CNY_RATE:-7.00}"
+      DEEPSEEK_INPUT_CACHE_HIT_USD_PER_MILLION: "${DEEPSEEK_INPUT_CACHE_HIT_USD_PER_MILLION:-0.014}"
+      DEEPSEEK_INPUT_CACHE_MISS_USD_PER_MILLION: "${DEEPSEEK_INPUT_CACHE_MISS_USD_PER_MILLION:-0.44}"
+      DEEPSEEK_OUTPUT_USD_PER_MILLION: "${DEEPSEEK_OUTPUT_USD_PER_MILLION:-1.32}"
+    volumes:
+      - agent-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      maintenance-agent:
+        condition: service_healthy
+    environment:
+      MCP_DOMAIN: "${MCP_DOMAIN:?Set MCP_DOMAIN in .env.production}"
+      ACME_EMAIL: "${ACME_EMAIL:?Set ACME_EMAIL in .env.production}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  agent-data:
+  caddy-data:
+  caddy-config:

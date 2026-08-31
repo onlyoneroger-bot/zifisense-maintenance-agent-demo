@@ -83,9 +83,7 @@ class TaskService:
                     observed_at=datetime.fromisoformat(item.occurred_at),
                     quality_status=quality_map[item.collection_quality],
                     usage_level=(
-                        "DECISION_REFERENCE"
-                        if item.collection_quality == "PASS"
-                        else "RECORD_ONLY"
+                        "DECISION_REFERENCE" if item.collection_quality == "PASS" else "RECORD_ONLY"
                     ),
                     is_simulated=True,
                     conflicts_with=[],

@@ -15,7 +15,23 @@ class ClientIdentity:
 
 class ApiKeyAuthenticator:
     def __init__(self, settings: Settings) -> None:
-        self._clients = (
+        configured_clients = settings.configured_api_clients()
+        if configured_clients:
+            self._clients = tuple(
+                (
+                    client.api_key_hash,
+                    ClientIdentity(client.client_id, frozenset(client.scopes)),
+                )
+                for client in configured_clients
+                if client.enabled
+            )
+            return
+
+        self._clients = self._legacy_clients(settings)
+
+    @staticmethod
+    def _legacy_clients(settings: Settings) -> tuple[tuple[str, ClientIdentity], ...]:
+        return (
             (
                 settings.evaluator_api_key_hash,
                 ClientIdentity(

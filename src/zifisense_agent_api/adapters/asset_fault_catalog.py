@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from zifisense_agent_api.domain.entities import AlarmFixture
 from zifisense_agent_api.mcp_models import (
     AssetListResult,
     AssetSummary,
@@ -87,6 +88,47 @@ class AssetFaultCatalog:
 
     def current_fault_for_asset(self, asset_id: str) -> dict[str, Any] | None:
         return next((fault for fault in self._faults if fault["asset_id"] == asset_id), None)
+
+    def current_fault(self, fault_id: str) -> dict[str, Any] | None:
+        fault = self._fault_by_id.get(fault_id)
+        return dict(fault) if fault is not None else None
+
+    def alarm_fixture_for_fault(self, fault_id: str) -> AlarmFixture:
+        """Build an isolated-session fixture from one current catalog fault."""
+        fault = self._fault_by_id.get(fault_id)
+        if fault is None:
+            raise KeyError(fault_id)
+        asset = self._asset_by_id[fault["asset_id"]]
+        investigation = self._investigations.get(fault_id, {})
+        monitoring = investigation.get("monitoring", {})
+        measurement_point_id = monitoring.get("measurement_point_id")
+        if not measurement_point_id:
+            measurement_point_id = asset["measurement_point_ids"][0]
+        return AlarmFixture(
+            scenario_id=f"catalog_fault:{fault_id}",
+            scenario_name=fault["title"],
+            scenario_description=(
+                f"从活动故障目录 {fault_id} 建立隔离调查会话；"
+                "后续结论仍受证据质量、现场同意和人工审批约束。"
+            ),
+            suggested_questions=(
+                "当前证据支持什么判断，还缺什么？",
+                "请按顺序给出处置步骤、责任人和升级条件。",
+                "是否需要停机，现有证据和企业 SOP 边界是什么？",
+            ),
+            asset_id=fault["asset_id"],
+            asset_name=asset["asset_name"],
+            measurement_point_id=measurement_point_id,
+            alarm_id=fault["alarm_ids"][0],
+            alarm_time=datetime.fromisoformat(fault["detected_at"]),
+            severity=fault["severity"],
+            diagnosis_text=fault["primary_diagnosis"],
+            confidence=float(fault["diagnosis_confidence"]),
+            algorithm_version=fault["algorithm_version"],
+            source_system=fault["diagnosis_source"],
+            evidence_summary=fault["title"],
+            is_simulated=True,
+        )
 
     def get_monitoring_summary(self, fault_id: str) -> MonitoringSummaryResult:
         data = self._investigation_section(fault_id, "monitoring")
@@ -211,9 +253,17 @@ class AssetFaultCatalog:
             if requires_human is not None and fault["requires_human"] != requires_human:
                 continue
             summary_fields = {
-                key: value for key, value in fault.items() if key not in {
-                    "diagnosis", "monitoring", "operating_context", "evidence",
-                    "conflicts", "open_questions", "recommended_actions"
+                key: value
+                for key, value in fault.items()
+                if key
+                not in {
+                    "diagnosis",
+                    "monitoring",
+                    "operating_context",
+                    "evidence",
+                    "conflicts",
+                    "open_questions",
+                    "recommended_actions",
                 }
             }
             items.append(FaultSummary(**summary_fields, asset_name=asset["asset_name"]))
@@ -301,25 +351,19 @@ class AssetFaultCatalog:
         ]
         core = {
             key: fault[key]
-            for key in (
-                "fault_id", "fault_status", "diagnosis_status", "severity", "detected_at"
-            )
+            for key in ("fault_id", "fault_status", "diagnosis_status", "severity", "detected_at")
         }
         return FaultDetailResult(
             fault=core,
             asset=asset if "asset" in modules else None,
             diagnosis=diagnosis if "diagnosis" in modules else None,
             monitoring=monitoring if "monitoring" in modules else None,
-            operating_context=(
-                operating_context if "operating_context" in modules else None
-            ),
+            operating_context=(operating_context if "operating_context" in modules else None),
             related_history=related_history if "similar_faults" in modules else [],
             evidence=evidence if "evidence" in modules else [],
             conflicts=fault.get("conflicts", []) if "conflicts" in modules else [],
             open_questions=open_questions if "open_questions" in modules else [],
-            recommended_actions=(
-                recommended_actions if "recommended_actions" in modules else []
-            ),
+            recommended_actions=(recommended_actions if "recommended_actions" in modules else []),
             task_id=fault["task_id"],
             is_degraded=False,
             is_simulated=True,

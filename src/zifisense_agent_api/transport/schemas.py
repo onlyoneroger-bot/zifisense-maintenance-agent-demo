@@ -203,6 +203,12 @@ class RecommendedAction(StrictModel):
     code: str
     label: str
     requires_approval: bool
+    why: str | None = None
+    owner: str | None = None
+    required_inputs: list[str] = Field(default_factory=list)
+    requires_consent: bool = False
+    blocking: bool = False
+    next_tool: str | None = None
 
 
 class PendingApproval(StrictModel):

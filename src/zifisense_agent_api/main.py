@@ -11,6 +11,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
 from zifisense_agent_api.adapters.fixtures import FixtureCatalog
+from zifisense_agent_api.adapters.llm.base import LLMProvider
+from zifisense_agent_api.adapters.llm.factory import build_llm_provider
 from zifisense_agent_api.application.agent_facade import AgentFacade
 from zifisense_agent_api.application.approval_service import ApprovalService
 from zifisense_agent_api.application.evaluation_service import EvaluationService
@@ -21,6 +23,7 @@ from zifisense_agent_api.config import Settings
 from zifisense_agent_api.domain.errors import ApplicationError
 from zifisense_agent_api.infrastructure.auth import ApiKeyAuthenticator
 from zifisense_agent_api.infrastructure.database import Database
+from zifisense_agent_api.infrastructure.llm_budget_repository import LLMBudgetRepository
 from zifisense_agent_api.infrastructure.rate_limit import SlidingWindowRateLimiter
 from zifisense_agent_api.infrastructure.repositories import EvaluationRepository
 from zifisense_agent_api.mcp_server import build_mcp_server
@@ -38,6 +41,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     clock: Callable[[], float] | None = None,
+    llm_provider: LLMProvider | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
     database = Database(app_settings.database_url)
@@ -52,9 +56,15 @@ def create_app(
     task_service = TaskService(repository)
     approval_service = ApprovalService(repository)
     reset_service = ResetService(repository)
-    agent_facade = AgentFacade(repository, catalog)
+    llm_budget_repository = LLMBudgetRepository(database) if app_settings.llm_enabled else None
+    active_llm_provider = llm_provider or build_llm_provider(
+        app_settings,
+        llm_budget_repository,
+    )
+    agent_facade = AgentFacade(repository, catalog, active_llm_provider)
     mcp_server = build_mcp_server(
         app_version=app_settings.app_version,
+        authenticator=authenticator,
         catalog=catalog,
         evaluation_service=evaluation_service,
         agent_facade=agent_facade,
@@ -102,6 +112,8 @@ def create_app(
     app.state.approval_service = approval_service
     app.state.reset_service = reset_service
     app.state.agent_facade = agent_facade
+    app.state.llm_provider = active_llm_provider
+    app.state.llm_budget_repository = llm_budget_repository
     app.state.repository = repository
     app.state.catalog = catalog
     app.state.mcp_server = mcp_server

@@ -15,9 +15,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
 def reset_demo_data(
     payload: ResetRequest,
     request: Request,
-    _idempotency_key: Annotated[
-        str, Header(alias="Idempotency-Key", min_length=8, max_length=128)
-    ],
+    _idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)],
     identity: Annotated[ClientIdentity, Depends(require_client("admin:write"))],
 ) -> ResetResponse:
     request_id, trace_id = get_request_ids(request)

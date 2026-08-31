@@ -31,9 +31,7 @@ class ResetService:
                     "INVALID_REQUEST",
                     "evaluation_session_id is required for SESSION reset.",
                 )
-            evaluation = self._repository.get_evaluation_session(
-                payload.evaluation_session_id
-            )
+            evaluation = self._repository.get_evaluation_session(payload.evaluation_session_id)
             if evaluation is None:
                 raise ApplicationError(404, "RESOURCE_NOT_FOUND", "Session does not exist.")
             if evaluation.client_id != client_id:

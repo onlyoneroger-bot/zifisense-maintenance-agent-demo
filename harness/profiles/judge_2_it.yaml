@@ -1,0 +1,11 @@
+id: judge_it
+name: 评委2：IT 真实性与工程专家
+weight: 30
+max_steps: 50
+mode: deterministic
+llm_enabled: false
+hard_fail_categories:
+  - availability
+  - auth
+  - truthfulness
+  - mcp

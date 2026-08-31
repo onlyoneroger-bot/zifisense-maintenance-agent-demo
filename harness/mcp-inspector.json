@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "zifisense-maintenance-agent": {
+      "type": "http",
+      "url": "http://127.0.0.1:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer dev-evaluator-key"
+      },
+      "protocolEra": "modern",
+      "connectionTimeout": 10000,
+      "requestTimeout": 10000
+    }
+  }
+}

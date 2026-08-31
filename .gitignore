@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.key
 *.pfx
@@ -31,6 +32,10 @@ data/
 *.sqlite3
 logs/
 *.log
+reports/
+/reports_*_acceptance/
+/.api_connection_test/full_probe_reports/
+/.api_connection_test/production_probe_reports/
 
 # Private or generated material
 private/

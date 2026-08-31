@@ -22,7 +22,7 @@ def make_settings(tmp_path: Path, **overrides) -> Settings:
         "rate_limit_agent_per_minute": 1000,
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 @pytest.fixture

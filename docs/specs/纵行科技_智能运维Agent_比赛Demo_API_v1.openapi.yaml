@@ -137,7 +137,7 @@ paths:
             schema:
               $ref: "#/components/schemas/EventIngestRequest"
       responses:
-        "202":
+        "200":
           description: Event accepted and processed by the task state machine
           content:
             application/json:
@@ -762,6 +762,20 @@ components:
           type: string
         requires_approval:
           type: boolean
+        why:
+          type: [string, "null"]
+        owner:
+          type: [string, "null"]
+        required_inputs:
+          type: array
+          items:
+            type: string
+        requires_consent:
+          type: boolean
+        blocking:
+          type: boolean
+        next_tool:
+          type: [string, "null"]
 
     PendingApproval:
       type: object

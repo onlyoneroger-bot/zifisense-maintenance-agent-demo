@@ -1,0 +1,22 @@
+services:
+  judge-harness:
+    build:
+      context: .
+      dockerfile: Dockerfile.harness
+    image: zifisense-judge-harness:1.0.0
+    depends_on:
+      maintenance-agent:
+        condition: service_healthy
+    environment:
+      HARNESS_BASE_URL: http://maintenance-agent:8080
+      HARNESS_API_KEY: "${HARNESS_API_KEY:-dev-evaluator-key}"
+      HARNESS_LIMITED_API_KEY: "${HARNESS_LIMITED_API_KEY:-dev-limited-key}"
+    volumes:
+      - "${HARNESS_REPORT_DIR:-./reports}:/app/reports"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

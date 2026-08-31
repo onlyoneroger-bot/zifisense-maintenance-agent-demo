@@ -11,10 +11,7 @@ from referencing.jsonschema import DRAFT202012
 
 REPOSITORY_DIR = Path(__file__).resolve().parents[1]
 OPENAPI_PATH = (
-    REPOSITORY_DIR
-    / "docs"
-    / "specs"
-    / "纵行科技_智能运维Agent_比赛Demo_API_v1.openapi.yaml"
+    REPOSITORY_DIR / "docs" / "specs" / "纵行科技_智能运维Agent_比赛Demo_API_v1.openapi.yaml"
 )
 OPENAPI_BASE_URI = "urn:zifisense:agent-api:openapi"
 

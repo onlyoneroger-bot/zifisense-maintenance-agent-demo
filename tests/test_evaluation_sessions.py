@@ -77,6 +77,7 @@ def test_invalid_or_missing_idempotency_key_maps_to_400(client):
 
 def test_five_concurrent_sessions_are_isolated(app):
     with TestClient(app) as local_client:
+
         def create(index: int) -> dict:
             response = local_client.post(
                 "/api/v1/evaluation/sessions",

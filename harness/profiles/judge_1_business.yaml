@@ -1,0 +1,10 @@
+id: judge_business
+name: 评委1：预测性维护业务专家
+weight: 40
+max_steps: 50
+mode: deterministic
+llm_enabled: false
+hard_fail_categories:
+  - conversation
+  - field_measurement
+  - work_order

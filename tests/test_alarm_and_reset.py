@@ -66,9 +66,7 @@ def test_session_reset_removes_only_target_session(client):
         "reset_count": 1,
     }
     missing = client.get(f"/api/v1/tasks/{target['task_id']}", headers=AUTH_HEADERS)
-    remaining = client.get(
-        f"/api/v1/tasks/{survivor['task_id']}", headers=AUTH_HEADERS
-    )
+    remaining = client.get(f"/api/v1/tasks/{survivor['task_id']}", headers=AUTH_HEADERS)
     assert missing.status_code == 404
     assert remaining.status_code == 200
 

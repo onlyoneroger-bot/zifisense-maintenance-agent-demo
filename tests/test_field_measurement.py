@@ -117,9 +117,7 @@ def test_pass_field_result_is_idempotent_and_advances_state(client, app):
     review_data = review.json()["data"]
     assert "质量合格" in review_data["answer"]
     portable = [
-        item
-        for item in review_data["evidence"]
-        if item["evidence_type"] == "PORTABLE_MEASUREMENT"
+        item for item in review_data["evidence"] if item["evidence_type"] == "PORTABLE_MEASUREMENT"
     ]
     assert len(portable) == 1
     assert portable[0]["quality_status"] == "VALID"
@@ -174,13 +172,9 @@ def test_field_result_rejects_wrong_asset_and_cross_session(client):
     )
     wrong_asset = field_event(first, "evt-wrong-asset")
     wrong_asset["payload"]["asset_id"] = "ASSET-OTHER"
-    asset_response = client.post(
-        "/api/v1/events", headers=AUTH_HEADERS, json=wrong_asset
-    )
+    asset_response = client.post("/api/v1/events", headers=AUTH_HEADERS, json=wrong_asset)
     cross_session = field_event(first, "evt-cross-session")
     cross_session["evaluation_session_id"] = second["evaluation_session_id"]
-    session_response = client.post(
-        "/api/v1/events", headers=AUTH_HEADERS, json=cross_session
-    )
+    session_response = client.post("/api/v1/events", headers=AUTH_HEADERS, json=cross_session)
     assert asset_response.status_code == 400
     assert session_response.status_code == 403

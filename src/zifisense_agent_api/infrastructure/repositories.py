@@ -51,9 +51,7 @@ class EvaluationRepository:
                 )
             )
 
-    def get_evaluation_session(
-        self, evaluation_session_id: str
-    ) -> EvaluationSessionRecord | None:
+    def get_evaluation_session(self, evaluation_session_id: str) -> EvaluationSessionRecord | None:
         with self._database.session_factory() as session:
             return session.get(EvaluationSessionRecord, evaluation_session_id)
 
@@ -157,9 +155,7 @@ class EvaluationRepository:
     def get_alarm_by_external_event(self, event_id: str) -> AlarmEventRecord | None:
         with self._database.session_factory() as session:
             return session.scalar(
-                select(AlarmEventRecord).where(
-                    AlarmEventRecord.external_event_id == event_id
-                )
+                select(AlarmEventRecord).where(AlarmEventRecord.external_event_id == event_id)
             )
 
     def add_alarm_event_task(
@@ -357,9 +353,7 @@ class EvaluationRepository:
             session.flush()
             return record, True
 
-    def get_field_measurement_request(
-        self, task_id: str
-    ) -> FieldMeasurementRequestRecord | None:
+    def get_field_measurement_request(self, task_id: str) -> FieldMeasurementRequestRecord | None:
         with self._database.session_factory() as session:
             return session.scalar(
                 select(FieldMeasurementRequestRecord).where(
@@ -367,9 +361,7 @@ class EvaluationRepository:
                 )
             )
 
-    def get_field_measurement_event(
-        self, event_id: str
-    ) -> FieldMeasurementEventRecord | None:
+    def get_field_measurement_event(self, event_id: str) -> FieldMeasurementEventRecord | None:
         with self._database.session_factory() as session:
             return session.get(FieldMeasurementEventRecord, event_id)
 
@@ -405,9 +397,7 @@ class EvaluationRepository:
             assert task is not None
             task.evidence_version += 1
             task.state = (
-                "HUMAN_DECISION"
-                if collection_quality == "PASS"
-                else "FIELD_EVIDENCE_PENDING"
+                "HUMAN_DECISION" if collection_quality == "PASS" else "FIELD_EVIDENCE_PENDING"
             )
             request_record = session.scalar(
                 select(FieldMeasurementRequestRecord).where(
@@ -422,9 +412,7 @@ class EvaluationRepository:
             session.flush()
             return record, task
 
-    def list_field_measurement_events(
-        self, task_id: str
-    ) -> list[FieldMeasurementEventRecord]:
+    def list_field_measurement_events(self, task_id: str) -> list[FieldMeasurementEventRecord]:
         with self._database.session_factory() as session:
             return list(
                 session.scalars(
@@ -478,15 +466,11 @@ class EvaluationRepository:
 
     def get_work_order(self, task_id: str) -> WorkOrderRecord | None:
         with self._database.session_factory() as session:
-            return session.scalar(
-                select(WorkOrderRecord).where(WorkOrderRecord.task_id == task_id)
-            )
+            return session.scalar(select(WorkOrderRecord).where(WorkOrderRecord.task_id == task_id))
 
     def get_approval(self, task_id: str) -> ApprovalRecord | None:
         with self._database.session_factory() as session:
-            return session.scalar(
-                select(ApprovalRecord).where(ApprovalRecord.task_id == task_id)
-            )
+            return session.scalar(select(ApprovalRecord).where(ApprovalRecord.task_id == task_id))
 
     def apply_approval_decision(
         self, *, task_id: str, decision: str, comment: str | None

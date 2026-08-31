@@ -37,9 +37,7 @@ def field_event(data: dict, event_id: str) -> dict:
     }
 
 
-def work_event(
-    data: dict, work_order_id: str, event_id: str, improved: bool
-) -> dict:
+def work_event(data: dict, work_order_id: str, event_id: str, improved: bool) -> dict:
     return {
         "event_id": event_id,
         "event_type": "WORK_ORDER_COMPLETED",

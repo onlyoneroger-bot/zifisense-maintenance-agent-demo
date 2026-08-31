@@ -5,9 +5,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from zifisense_agent_api.domain.guidance import GuidanceEnvelope
+
 
 class MCPModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class GuidedMCPModel(MCPModel):
+    guidance: GuidanceEnvelope | None = None
 
 
 MonitoringStatus = Literal["ONLINE", "OFFLINE", "DEGRADED", "UNKNOWN"]
@@ -47,7 +53,7 @@ class AssetSummary(MCPModel):
     is_simulated: Literal[True]
 
 
-class AssetListResult(MCPModel):
+class AssetListResult(GuidedMCPModel):
     items: list[AssetSummary]
     total: int = Field(ge=0)
     next_cursor: str | None
@@ -77,7 +83,7 @@ class FaultSummary(MCPModel):
     is_simulated: Literal[True]
 
 
-class FaultListResult(MCPModel):
+class FaultListResult(GuidedMCPModel):
     items: list[FaultSummary]
     total: int = Field(ge=0)
     next_cursor: str | None
@@ -110,14 +116,14 @@ class FaultHistoryItem(MCPModel):
     is_simulated: Literal[True]
 
 
-class FaultHistoryResult(MCPModel):
+class FaultHistoryResult(GuidedMCPModel):
     items: list[FaultHistoryItem]
     total: int = Field(ge=0)
     next_cursor: str | None
     is_simulated: Literal[True]
 
 
-class FaultDetailResult(MCPModel):
+class FaultDetailResult(GuidedMCPModel):
     fault: dict[str, Any]
     asset: dict[str, Any] | None
     diagnosis: dict[str, Any] | None
@@ -133,7 +139,7 @@ class FaultDetailResult(MCPModel):
     is_simulated: Literal[True]
 
 
-class TaskResult(MCPModel):
+class TaskResult(GuidedMCPModel):
     task_id: str
     evaluation_session_id: str
     task_state: str
@@ -151,11 +157,11 @@ class TaskResult(MCPModel):
     is_simulated: bool
 
 
-class MCPAgentInvokeResult(MCPModel):
+class MCPAgentInvokeResult(GuidedMCPModel):
     response: dict[str, Any]
 
 
-class MonitoringSummaryResult(MCPModel):
+class MonitoringSummaryResult(GuidedMCPModel):
     fault_id: str
     asset_id: str
     window: str
@@ -170,7 +176,7 @@ class MonitoringSummaryResult(MCPModel):
     is_simulated: Literal[True]
 
 
-class OperatingContextResult(MCPModel):
+class OperatingContextResult(GuidedMCPModel):
     fault_id: str
     asset_id: str
     status: str
@@ -187,7 +193,7 @@ class OperatingContextResult(MCPModel):
     is_simulated: Literal[True]
 
 
-class MaintenanceHistoryResult(MCPModel):
+class MaintenanceHistoryResult(GuidedMCPModel):
     fault_id: str
     asset_id: str
     records: list[dict[str, Any]]
@@ -196,7 +202,7 @@ class MaintenanceHistoryResult(MCPModel):
     is_simulated: Literal[True]
 
 
-class PeerComparisonResult(MCPModel):
+class PeerComparisonResult(GuidedMCPModel):
     fault_id: str
     subject_asset_id: str
     peer_group_id: str
@@ -211,7 +217,7 @@ class PeerComparisonResult(MCPModel):
     is_simulated: Literal[True]
 
 
-class FieldMeasurementRequestResult(MCPModel):
+class FieldMeasurementRequestResult(GuidedMCPModel):
     request_id: str
     evaluation_session_id: str
     task_id: str

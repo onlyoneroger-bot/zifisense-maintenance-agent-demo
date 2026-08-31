@@ -43,12 +43,8 @@ def test_legacy_sqlite_schema_is_migrated_forward(tmp_path):
     database.create_schema()
     schema = inspect(database.engine)
 
-    assert "evidence_version" in {
-        item["name"] for item in schema.get_columns("tasks")
-    }
-    assert "external_event_id" in {
-        item["name"] for item in schema.get_columns("alarm_events")
-    }
+    assert "evidence_version" in {item["name"] for item in schema.get_columns("tasks")}
+    assert "external_event_id" in {item["name"] for item in schema.get_columns("alarm_events")}
     assert "ux_alarm_external_event_id" in {
         item["name"] for item in schema.get_indexes("alarm_events")
     }

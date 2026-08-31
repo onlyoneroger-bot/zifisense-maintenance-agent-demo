@@ -121,17 +121,11 @@ class EventService:
         request_id: str,
         trace_id: str,
     ) -> EventIngestResponse:
-        evaluation = self._repository.get_evaluation_session(
-            request.evaluation_session_id
-        )
+        evaluation = self._repository.get_evaluation_session(request.evaluation_session_id)
         if evaluation is None:
-            raise ApplicationError(
-                404, "RESOURCE_NOT_FOUND", "Evaluation session does not exist."
-            )
+            raise ApplicationError(404, "RESOURCE_NOT_FOUND", "Evaluation session does not exist.")
         if evaluation.client_id != client_id:
-            raise ApplicationError(
-                403, "INSUFFICIENT_SCOPE", "Session access is forbidden."
-            )
+            raise ApplicationError(403, "INSUFFICIENT_SCOPE", "Session access is forbidden.")
         duplicate = self._repository.get_alarm_by_external_event(request.event_id)
         if duplicate is not None:
             if (
@@ -199,9 +193,7 @@ class EventService:
         if evaluation.client_id != client_id or task.evaluation_session_id != evaluation.id:
             raise ApplicationError(403, "INSUFFICIENT_SCOPE", "Task access is forbidden.")
         if work_order.id != request.payload.work_order_id:
-            raise ApplicationError(
-                400, "INVALID_REQUEST", "work_order_id does not match the task."
-            )
+            raise ApplicationError(400, "INVALID_REQUEST", "work_order_id does not match the task.")
         if work_order.status not in {"SUBMITTED", "IN_PROGRESS", "COMPLETED"}:
             raise ApplicationError(
                 409,

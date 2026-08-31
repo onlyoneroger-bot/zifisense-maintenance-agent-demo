@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -120,6 +121,134 @@ def test_mcp_requires_bearer_and_scope(app):
     assert limited.status_code == 403
 
 
+def test_three_configured_accounts_can_discover_mcp(tmp_path):
+    keys = ["configured-mcp-key-1", "configured-mcp-key-2", "configured-mcp-key-3"]
+    records = [
+        {
+            "client_id": f"zifisense-mcp-{index}",
+            "api_key_hash": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+            "scopes": ["mcp:use"],
+        }
+        for index, key in enumerate(keys, start=1)
+    ]
+    settings = make_settings(
+        tmp_path,
+        api_clients_json=json.dumps(records, separators=(",", ":")),
+    )
+    application = create_app(settings)
+    request = modern_request("server/discover")
+    base_headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": MODERN_VERSION,
+        "Mcp-Method": "server/discover",
+    }
+
+    try:
+        with TestClient(application) as client:
+            responses = [
+                client.post(
+                    "/mcp",
+                    headers={**base_headers, "Authorization": f"Bearer {key}"},
+                    json=request,
+                )
+                for key in keys
+            ]
+        assert all(response.status_code == 200 for response in responses)
+        assert all(
+            response.json()["result"]["supportedVersions"] == [MODERN_VERSION]
+            for response in responses
+        )
+    finally:
+        application.state.database.close()
+
+
+def test_configured_mcp_accounts_have_isolated_sessions_and_idempotency(tmp_path):
+    keys = ["isolated-mcp-key-a", "isolated-mcp-key-b"]
+    records = [
+        {
+            "client_id": f"isolated-client-{suffix}",
+            "api_key_hash": hashlib.sha256(key.encode("utf-8")).hexdigest(),
+            "scopes": ["mcp:use"],
+        }
+        for suffix, key in zip(("a", "b"), keys, strict=True)
+    ]
+    application = create_app(
+        make_settings(
+            tmp_path,
+            api_clients_json=json.dumps(records, separators=(",", ":")),
+        )
+    )
+
+    def call_as(
+        client: TestClient,
+        key: str,
+        name: str,
+        arguments: dict[str, Any],
+        request_id: int,
+    ):
+        return client.post(
+            "/mcp",
+            headers={
+                **modern_headers("tools/call", name),
+                "Authorization": f"Bearer {key}",
+            },
+            json=modern_request(
+                "tools/call",
+                request_id=request_id,
+                params={"name": name, "arguments": arguments},
+            ),
+        )
+
+    try:
+        with TestClient(application) as client:
+            created = [
+                call_as(
+                    client,
+                    key,
+                    "create_evaluation_session",
+                    {
+                        "scenario_id": "reducer_gear_alarm_v1",
+                        "idempotency_key": "shared-idempotency-key",
+                    },
+                    index + 1,
+                )
+                for index, key in enumerate(keys)
+            ]
+            payloads = [
+                response.json()["result"]["structuredContent"]["data"]
+                for response in created
+            ]
+            assert payloads[0]["evaluation_session_id"] != payloads[1]["evaluation_session_id"]
+
+            own = call_as(
+                client,
+                keys[0],
+                "get_task",
+                {
+                    "evaluation_session_id": payloads[0]["evaluation_session_id"],
+                    "task_id": payloads[0]["task_id"],
+                },
+                10,
+            ).json()
+            cross_account = call_as(
+                client,
+                keys[1],
+                "get_task",
+                {
+                    "evaluation_session_id": payloads[0]["evaluation_session_id"],
+                    "task_id": payloads[0]["task_id"],
+                },
+                11,
+            ).json()
+
+        assert own["result"]["isError"] is False
+        assert cross_account["result"]["isError"] is True
+        assert "forbidden" in cross_account["result"]["content"][0]["text"].casefold()
+    finally:
+        application.state.database.close()
+
+
 def test_modern_discovery_and_tool_catalog(app):
     with TestClient(app) as client:
         discovery = client.post(
@@ -144,6 +273,7 @@ def test_modern_discovery_and_tool_catalog(app):
     definitions = tools.json()["result"]["tools"]
     assert {tool["name"] for tool in definitions} == EXPECTED_TOOLS
     assert all(tool["inputSchema"]["type"] == "object" for tool in definitions)
+    assert all("ctx" not in tool["inputSchema"].get("properties", {}) for tool in definitions)
     list_assets = next(tool for tool in definitions if tool["name"] == "list_assets")
     assert list_assets["inputSchema"]["properties"]["limit"]["maximum"] == 100
 
@@ -270,9 +400,7 @@ def test_investigation_tools_return_structured_source_backed_results(app):
         "compare_peer_assets": ("comparability", "PARTIAL"),
     }
     with TestClient(app) as client:
-        for index, (tool_name, (field, expected)) in enumerate(
-            expectations.items(), start=1
-        ):
+        for index, (tool_name, (field, expected)) in enumerate(expectations.items(), start=1):
             response, body = call_modern_tool(
                 client,
                 tool_name,
@@ -354,6 +482,7 @@ def test_mcp_and_rest_share_session_task_and_agent(app):
 
 def test_ten_concurrent_modern_tool_calls(app):
     with TestClient(app) as client:
+
         def invoke(index: int) -> int:
             response, body = call_modern_tool(
                 client,
@@ -373,12 +502,8 @@ def test_mcp_rate_limit_returns_retry_after(tmp_path):
     app = create_app(make_settings(tmp_path, rate_limit_mcp_per_minute=1))
     request = modern_request("server/discover")
     with TestClient(app) as client:
-        first = client.post(
-            "/mcp", headers=modern_headers("server/discover"), json=request
-        )
-        limited = client.post(
-            "/mcp", headers=modern_headers("server/discover"), json=request
-        )
+        first = client.post("/mcp", headers=modern_headers("server/discover"), json=request)
+        limited = client.post("/mcp", headers=modern_headers("server/discover"), json=request)
     app.state.database.close()
     assert first.status_code == 200
     assert limited.status_code == 429

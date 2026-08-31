@@ -1,0 +1,25 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+{$MCP_DOMAIN} {
+	log {
+		output stdout
+		format json
+	}
+
+	reverse_proxy maintenance-agent:8080 {
+		flush_interval -1
+		transport http {
+			response_header_timeout 25s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

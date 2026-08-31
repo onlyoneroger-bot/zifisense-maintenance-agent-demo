@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Float,
     ForeignKey,
@@ -59,9 +60,7 @@ class AlarmEventRecord(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     alarm_id: Mapped[str] = mapped_column(String(128), index=True)
-    external_event_id: Mapped[str | None] = mapped_column(
-        String(128), unique=True, nullable=True
-    )
+    external_event_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
     asset_id: Mapped[str] = mapped_column(String(128))
     measurement_point_id: Mapped[str] = mapped_column(String(128))
@@ -106,6 +105,36 @@ class ConversationTurnRecord(Base):
     answer: Mapped[str] = mapped_column(Text)
     tool_names_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(64))
+
+
+class LLMDailyBudgetRecord(Base):
+    __tablename__ = "llm_daily_budgets"
+
+    budget_key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    budget_date: Mapped[str] = mapped_column(String(10), index=True)
+    timezone: Mapped[str] = mapped_column(String(64))
+    limit_micros_cny: Mapped[int] = mapped_column(BigInteger)
+    spent_micros_cny: Mapped[int] = mapped_column(BigInteger, default=0)
+    reserved_micros_cny: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[str] = mapped_column(String(64))
+
+
+class LLMUsageLedgerRecord(Base):
+    __tablename__ = "llm_usage_ledger"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    request_id: Mapped[str] = mapped_column(String(128), index=True)
+    budget_key: Mapped[str] = mapped_column(ForeignKey("llm_daily_budgets.budget_key"), index=True)
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_cache_hit_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    prompt_cache_miss_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    completion_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    reserved_micros_cny: Mapped[int] = mapped_column(BigInteger)
+    settled_micros_cny: Mapped[int] = mapped_column(BigInteger, default=0)
+    status: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[str] = mapped_column(String(64))
+    settled_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HumanClaimRecord(Base):
@@ -230,10 +259,7 @@ class Database:
         with self.engine.begin() as connection:
             if "evidence_version" not in task_columns:
                 connection.execute(
-                    text(
-                        "ALTER TABLE tasks ADD COLUMN evidence_version "
-                        "INTEGER NOT NULL DEFAULT 1"
-                    )
+                    text("ALTER TABLE tasks ADD COLUMN evidence_version INTEGER NOT NULL DEFAULT 1")
                 )
             if "external_event_id" not in alarm_columns:
                 connection.execute(

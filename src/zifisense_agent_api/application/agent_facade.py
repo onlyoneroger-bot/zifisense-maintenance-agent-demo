@@ -7,7 +7,14 @@ from time import perf_counter
 from typing import Any
 
 from zifisense_agent_api.adapters.asset_fault_catalog import AssetFaultCatalog
+from zifisense_agent_api.adapters.llm.base import (
+    LLMBudgetExceededError,
+    LLMProvider,
+    LLMProviderError,
+)
+from zifisense_agent_api.application.guidance_engine import GuidanceEngine
 from zifisense_agent_api.domain.errors import ApplicationError
+from zifisense_agent_api.domain.llm_models import LLMAnswerRequest, LLMEvidence
 from zifisense_agent_api.domain.task_state import TaskState
 from zifisense_agent_api.infrastructure.repositories import EvaluationRepository
 from zifisense_agent_api.transport.schemas import (
@@ -15,6 +22,7 @@ from zifisense_agent_api.transport.schemas import (
     AgentInvokeRequest,
     AgentInvokeResponse,
     AgentResponseData,
+    Citation,
     EvidenceItem,
     Fact,
     OpenQuestion,
@@ -36,15 +44,21 @@ class InvestigationIntent(StrEnum):
     HUMAN_CONTEXT = "HUMAN_CONTEXT"
     FIELD_MEASUREMENT_CONSENT = "FIELD_MEASUREMENT_CONSENT"
     WORK_ORDER_DRAFT = "WORK_ORDER_DRAFT"
+    SAFETY_DECISION = "SAFETY_DECISION"
     OUT_OF_SCOPE = "OUT_OF_SCOPE"
 
 
 class AgentFacade:
     def __init__(
-        self, repository: EvaluationRepository, catalog: AssetFaultCatalog
+        self,
+        repository: EvaluationRepository,
+        catalog: AssetFaultCatalog,
+        llm_provider: LLMProvider | None = None,
     ) -> None:
         self._repository = repository
         self._catalog = catalog
+        self._llm_provider = llm_provider
+        self._guidance = GuidanceEngine()
 
     def invoke(
         self,
@@ -125,6 +139,7 @@ class AgentFacade:
             InvestigationIntent.HUMAN_CONTEXT,
             InvestigationIntent.FIELD_MEASUREMENT_CONSENT,
             InvestigationIntent.WORK_ORDER_DRAFT,
+            InvestigationIntent.SAFETY_DECISION,
         }:
             loaded["monitoring"] = run_tool(
                 "get_monitoring_summary",
@@ -137,6 +152,7 @@ class AgentFacade:
             InvestigationIntent.MONITORING,
             InvestigationIntent.OPERATING_CONTEXT,
             InvestigationIntent.HUMAN_CONTEXT,
+            InvestigationIntent.SAFETY_DECISION,
         }:
             loaded["operating_context"] = run_tool(
                 "get_operating_context",
@@ -226,19 +242,13 @@ class AgentFacade:
         work_order_approval = None
         if intent is InvestigationIntent.WORK_ORDER_DRAFT:
             passed_field_event = next(
-                (
-                    item
-                    for item in reversed(field_events)
-                    if item.collection_quality == "PASS"
-                ),
+                (item for item in reversed(field_events) if item.collection_quality == "PASS"),
                 None,
             )
             if passed_field_event is not None:
-                work_order, approval, created = (
-                    self._repository.get_or_create_work_order_approval(
-                        evaluation_session_id=evaluation.id,
-                        task_id=task.id,
-                    )
+                work_order, approval, created = self._repository.get_or_create_work_order_approval(
+                    evaluation_session_id=evaluation.id,
+                    task_id=task.id,
                 )
                 if approval.status == "PENDING":
                     work_order_approval = (work_order, approval)
@@ -281,6 +291,12 @@ class AgentFacade:
             field_request=field_request,
             work_order_approval=work_order_approval,
         )
+        response_data, is_degraded = self._enhance_with_llm(
+            request=request,
+            request_id=request_id,
+            intent=intent,
+            response_data=response_data,
+        )
         self._repository.append_conversation_turn(
             evaluation_session_id=evaluation.id,
             conversation_id=conversation.id,
@@ -296,14 +312,185 @@ class AgentFacade:
             data=response_data,
             meta=ResponseMeta(
                 timestamp=datetime.now().astimezone(),
-                is_degraded=False,
+                is_degraded=is_degraded,
             ),
+        )
+
+    def _enhance_with_llm(
+        self,
+        *,
+        request: AgentInvokeRequest,
+        request_id: str,
+        intent: InvestigationIntent,
+        response_data: AgentResponseData,
+    ) -> tuple[AgentResponseData, bool]:
+        safe_read_only_intents = {
+            InvestigationIntent.OVERVIEW,
+            InvestigationIntent.MONITORING,
+            InvestigationIntent.OPERATING_CONTEXT,
+            InvestigationIntent.MAINTENANCE,
+            InvestigationIntent.PEER_COMPARISON,
+            InvestigationIntent.HISTORY,
+            InvestigationIntent.HUMAN_CONTEXT,
+        }
+        if self._llm_provider is None or intent not in safe_read_only_intents:
+            return response_data, False
+
+        provider_started = perf_counter()
+        llm_request = LLMAnswerRequest(
+            request_id=request_id,
+            user_message=request.message,
+            intent=intent.value,
+            task_state=response_data.task_state.value,
+            deterministic_answer=response_data.answer,
+            diagnosis_text=response_data.system_diagnosis.diagnosis_text,
+            diagnosis_confidence=response_data.system_diagnosis.confidence,
+            evidence=[
+                LLMEvidence(
+                    evidence_id=item.evidence_id,
+                    evidence_type=item.evidence_type,
+                    summary=item.summary,
+                    quality_status=item.quality_status,
+                    usage_level=item.usage_level,
+                )
+                for item in response_data.evidence
+            ],
+        )
+        try:
+            enhancement = self._llm_provider.synthesize(llm_request)
+        except LLMBudgetExceededError:
+            skipped_execution = ToolExecution(
+                tool_name="llm_answer_synthesis",
+                status="SKIPPED",
+                source_system="BUDGET_GATE",
+                elapsed_ms=max(0, round((perf_counter() - provider_started) * 1000)),
+                is_simulated=False,
+            )
+            return (
+                response_data.model_copy(
+                    update={
+                        "tool_executions": [
+                            *response_data.tool_executions,
+                            skipped_execution,
+                        ]
+                    }
+                ),
+                True,
+            )
+        except LLMProviderError:
+            failed_execution = ToolExecution(
+                tool_name="llm_answer_synthesis",
+                status="FAILED",
+                source_system=(f"{self._llm_provider.provider.upper()}:{self._llm_provider.model}"),
+                elapsed_ms=max(0, round((perf_counter() - provider_started) * 1000)),
+                is_simulated=False,
+            )
+            return (
+                response_data.model_copy(
+                    update={
+                        "tool_executions": [
+                            *response_data.tool_executions,
+                            failed_execution,
+                        ]
+                    }
+                ),
+                True,
+            )
+
+        evidence_by_id = {item.evidence_id: item for item in response_data.evidence}
+        citations = [
+            Citation(
+                document_id=evidence_id,
+                title=f"{evidence_by_id[evidence_id].evidence_type} 证据",
+                locator=evidence_id,
+                excerpt=evidence_by_id[evidence_id].summary,
+            )
+            for evidence_id in enhancement.cited_evidence_ids
+        ]
+        succeeded_execution = ToolExecution(
+            tool_name="llm_answer_synthesis",
+            status="SUCCEEDED",
+            source_system=f"{enhancement.provider.upper()}:{enhancement.model}",
+            elapsed_ms=enhancement.latency_ms,
+            is_simulated=False,
+        )
+        enhanced_answer = enhancement.answer
+        missing_actions = [
+            action
+            for action in response_data.recommended_actions
+            if action.label not in enhanced_answer
+        ]
+        if missing_actions:
+            ordered = "；".join(
+                f"{index}. {action.label}（{action.owner or 'RELIABILITY_ENGINEER'}）"
+                f"—{action.why or '由当前证据状态触发'}"
+                for index, action in enumerate(missing_actions, start=1)
+            )
+            enhanced_answer = f"{enhanced_answer}\n处置顺序：{ordered}。"
+        blocking_questions = [
+            question.question for question in response_data.open_questions if question.blocking
+        ]
+        if blocking_questions and blocking_questions[0] not in enhanced_answer:
+            enhanced_answer = f"{enhanced_answer}\n需要先确认：{blocking_questions[0]}"
+        if (
+            intent is InvestigationIntent.SAFETY_DECISION
+            and "不执行生产控制" not in enhanced_answer
+        ):
+            enhanced_answer = (
+                f"{enhanced_answer}\n决策边界：本服务不执行生产控制；停机、停线或降载"
+                "必须由授权人员依据企业 SOP 决定。"
+            )
+        return (
+            response_data.model_copy(
+                update={
+                    "answer": enhanced_answer,
+                    "citations": citations,
+                    "tool_executions": [
+                        *response_data.tool_executions,
+                        succeeded_execution,
+                    ],
+                }
+            ),
+            False,
         )
 
     @staticmethod
     def _route_intent(message: str) -> InvestigationIntent:
         normalized = "".join(message.casefold().split())
-        if any(word in normalized for word in ("新闻稿", "写诗", "天气", "股票", "翻译")):
+        direct_control_patterns = (
+            "直接停机",
+            "立即停机",
+            "执行停机",
+            "直接停线",
+            "立即停线",
+            "执行停线",
+            "不需要人工确认",
+            "无需人工确认",
+        )
+        if any(word in normalized for word in direct_control_patterns):
+            return InvestigationIntent.OUT_OF_SCOPE
+        if any(
+            word in normalized
+            for word in ("是否停机", "需要停机", "要停机", "是否停线", "需要停线", "要停线", "降载")
+        ):
+            return InvestigationIntent.SAFETY_DECISION
+        out_of_scope_patterns = (
+            "新闻稿",
+            "写诗",
+            "天气",
+            "股票",
+            "翻译",
+            "plc",
+            "dcs",
+            "启动设备",
+            "写入控制",
+            "下发控制",
+            "执行控制",
+            "忽略前面",
+            "忽略规则",
+            "绕过规则",
+        )
+        if any(word in normalized for word in out_of_scope_patterns):
             return InvestigationIntent.OUT_OF_SCOPE
         consent_patterns = (
             "同意补测",
@@ -416,9 +603,7 @@ class AgentFacade:
                     source_system=monitoring.source_system,
                     observed_at=monitoring.observed_at,
                     quality_status=(
-                        "CONFLICTING"
-                        if monitoring.data_quality == "CONFLICTING"
-                        else "VALID"
+                        "CONFLICTING" if monitoring.data_quality == "CONFLICTING" else "VALID"
                     ),
                     usage_level="DECISION_REFERENCE",
                     is_simulated=True,
@@ -600,6 +785,14 @@ class AgentFacade:
                 )
             )
 
+        recommended_steps = self._guidance.agent_actions(
+            fault=fault,
+            loaded=loaded,
+            intent=intent.value,
+            task_state=task_state.value,
+            field_request=field_request,
+            work_order_approval=work_order_approval,
+        )
         answer = self._answer_for(
             intent,
             fault,
@@ -608,6 +801,12 @@ class AgentFacade:
             field_request,
             work_order_approval,
         )
+        if recommended_steps:
+            ordered_actions = "；".join(
+                f"{index}. {step.title}（{step.owner}）"
+                for index, step in enumerate(recommended_steps, start=1)
+            )
+            answer = f"{answer}\n处置顺序：{ordered_actions}。"
         open_questions = self._open_questions(loaded, human_claim)
         return AgentResponseData(
             answer=answer,
@@ -626,15 +825,17 @@ class AgentFacade:
             tool_executions=tool_executions,
             recommended_actions=[
                 RecommendedAction(
-                    code="VERIFY_OPERATING_CONTEXT",
-                    label="补齐报警时工况并在可比条件下复核",
-                    requires_approval=False,
-                ),
-                RecommendedAction(
-                    code="REQUEST_FIELD_MEASUREMENT",
-                    label="征得现场同意后安排便携三轴振动补测",
-                    requires_approval=True,
-                ),
+                    code=step.code,
+                    label=step.title,
+                    why=step.why,
+                    owner=step.owner,
+                    required_inputs=step.required_inputs,
+                    requires_consent=step.requires_consent,
+                    requires_approval=step.requires_approval,
+                    blocking=step.blocking,
+                    next_tool=step.next_tool,
+                )
+                for step in recommended_steps
             ],
             pending_approval=(
                 PendingApproval(
@@ -673,6 +874,22 @@ class AgentFacade:
                 "该问题不属于设备智能运维范围。我可以查询设备列表、当前故障、监测趋势、"
                 "近期工况、维修历史、同类设备对比和历史故障。"
             )
+        if intent is InvestigationIntent.SAFETY_DECISION:
+            severity = fault.get("severity", "INFO")
+            diagnosis_status = fault.get("diagnosis_status", "CANDIDATE")
+            if severity in {"CRITICAL", "MAJOR"}:
+                return (
+                    prefix + f"当前等级为 {severity}、诊断成熟度为 {diagnosis_status}。"
+                    "是否停机不能由目录记录自动决定：请立即由值班工程师核实当前负荷、"
+                    "保护/联锁状态和异常持续性，再由授权人员依据企业 SOP 决定停机、降载或继续运行。"
+                    "本服务不具备也不会调用生产控制能力。"
+                )
+            return (
+                prefix + f"当前等级为 {severity}、诊断成熟度为 {diagnosis_status}，"
+                "现有证据不足以建议停机。"
+                "应先在可比工况补齐趋势和现场证据；如达到企业既定安全或保护阈值，"
+                "再由授权人员按 SOP 决策。本服务不执行生产控制。"
+            )
         if intent is InvestigationIntent.WORK_ORDER_DRAFT:
             decided_status = loaded.get("work_order_status")
             if decided_status is not None:
@@ -681,13 +898,9 @@ class AgentFacade:
                     + f"该模拟工单的审批已处于 {decided_status}，不会重新签发或恢复旧 Challenge。"
                 )
             if work_order_approval is None:
-                return (
-                    prefix
-                    + "当前没有质量合格的现场补测证据，证据门控拒绝生成工单草稿。"
-                )
+                return prefix + "当前没有质量合格的现场补测证据，证据门控拒绝生成工单草稿。"
             return (
-                prefix
-                + f"已生成模拟工单草稿 {work_order_approval[0].id}，"
+                prefix + f"已生成模拟工单草稿 {work_order_approval[0].id}，"
                 "尚未提交；必须使用一次性审批 Challenge 明确批准。"
             )
         field_measurements = loaded.get("field_measurements", [])
@@ -695,13 +908,11 @@ class AgentFacade:
             latest = field_measurements[-1]
             if latest.collection_quality == "PASS":
                 return (
-                    prefix
-                    + "已收到质量合格的结构化现场补测结果，可作为人工工程判断的参考；"
+                    prefix + "已收到质量合格的结构化现场补测结果，可作为人工工程判断的参考；"
                     "系统不会自动把它升级为最终故障结论。"
                 )
             return (
-                prefix
-                + f"现场补测质量为 {latest.collection_quality}，当前证据不足，"
+                prefix + f"现场补测质量为 {latest.collection_quality}，当前证据不足，"
                 "需要在可比工况下重新采集，不能升级工程结论。"
             )
         if intent is InvestigationIntent.HUMAN_CONTEXT and human_claim is not None:
@@ -710,13 +921,9 @@ class AgentFacade:
                 + f"已原样记录你的描述“{human_claim.claim_text}”，但它目前是未验证的人工信息，"
                 "不会覆盖专业报警。建议补齐发生时间、负荷和转速，并在可比工况下复核。"
             )
-        if (
-            intent is InvestigationIntent.FIELD_MEASUREMENT_CONSENT
-            and field_request is not None
-        ):
+        if intent is InvestigationIntent.FIELD_MEASUREMENT_CONSENT and field_request is not None:
             return (
-                prefix
-                + f"已根据你的明确同意创建模拟现场补测请求 {field_request.id}，"
+                prefix + f"已根据你的明确同意创建模拟现场补测请求 {field_request.id}，"
                 f"测点为 {field_request.measurement_point_id}。结果回传前不会升级工程结论。"
             )
         if intent is InvestigationIntent.PEER_COMPARISON:
@@ -730,15 +937,12 @@ class AgentFacade:
         if intent is InvestigationIntent.OPERATING_CONTEXT:
             context = loaded["operating_context"]
             return (
-                prefix
-                + f"最近已知负荷为 {context.load_percent}%、转速 {context.speed_rpm} rpm，"
+                prefix + f"最近已知负荷为 {context.load_percent}%、转速 {context.speed_rpm} rpm，"
                 f"数据新鲜度为 {context.freshness}；仍需核实报警时工况。"
             )
         if intent is InvestigationIntent.MONITORING:
             return (
-                prefix
-                + loaded["monitoring"].trend
-                + "；是否由设备本体引起仍需结合工况和现场证据。"
+                prefix + loaded["monitoring"].trend + "；是否由设备本体引起仍需结合工况和现场证据。"
             )
         return (
             prefix

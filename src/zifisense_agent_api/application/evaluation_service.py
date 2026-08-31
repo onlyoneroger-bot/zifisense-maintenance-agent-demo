@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from zifisense_agent_api.adapters.fixtures import FixtureCatalog
-from zifisense_agent_api.domain.entities import EvaluationBundle
+from zifisense_agent_api.domain.entities import AlarmFixture, EvaluationBundle
 from zifisense_agent_api.domain.errors import ApplicationError
 from zifisense_agent_api.domain.task_state import TaskState
 from zifisense_agent_api.infrastructure.idempotency import canonical_request_hash
@@ -36,7 +36,38 @@ class EvaluationService:
         request_id: str,
         trace_id: str,
     ) -> CreateEvaluationSessionResponse:
-        request_hash = canonical_request_hash(request.model_dump(mode="json"))
+        try:
+            fixture = self._fixtures.load_alarm_scenario(request.scenario_id)
+        except (KeyError, FileNotFoundError) as exc:
+            raise ApplicationError(
+                400,
+                "INVALID_REQUEST",
+                "Unsupported or unavailable scenario_id.",
+                details={"scenario_id": request.scenario_id},
+            ) from exc
+        return self.create_from_fixture(
+            fixture=fixture,
+            locale=request.locale,
+            client_id=client_id,
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+            trace_id=trace_id,
+            request_payload=request.model_dump(mode="json"),
+        )
+
+    def create_from_fixture(
+        self,
+        *,
+        fixture: AlarmFixture,
+        locale: str,
+        client_id: str,
+        idempotency_key: str,
+        request_id: str,
+        trace_id: str,
+        request_payload: dict[str, str],
+    ) -> CreateEvaluationSessionResponse:
+        """Create a session from a validated scenario or current-fault fixture."""
+        request_hash = canonical_request_hash(request_payload)
         with self._write_lock:
             existing = self._repository.find_idempotency(
                 client_id, "create_evaluation_session", idempotency_key
@@ -51,16 +82,6 @@ class EvaluationService:
                 return CreateEvaluationSessionResponse.model_validate(
                     decode_idempotent_response(existing)
                 )
-
-            try:
-                fixture = self._fixtures.load_alarm_scenario(request.scenario_id)
-            except (KeyError, FileNotFoundError) as exc:
-                raise ApplicationError(
-                    400,
-                    "INVALID_REQUEST",
-                    "Unsupported or unavailable scenario_id.",
-                    details={"scenario_id": request.scenario_id},
-                ) from exc
 
             suffix = uuid.uuid4().hex
             bundle = EvaluationBundle(
@@ -90,7 +111,7 @@ class EvaluationService:
             self._repository.create_evaluation(
                 bundle=bundle,
                 client_id=client_id,
-                locale=request.locale,
+                locale=locale,
                 fixture=fixture,
                 idempotency_key=idempotency_key,
                 request_hash=request_hash,
